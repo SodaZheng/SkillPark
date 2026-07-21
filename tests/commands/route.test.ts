@@ -1,0 +1,98 @@
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { createProgram } from "../../src/app/create-program.js";
+import { createCommandContext } from "../../src/commands/context.js";
+import { routeParkedSkills } from "../../src/commands/route.js";
+import { UsageError } from "../../src/domain/errors.js";
+import type { OutputPort } from "../../src/tui/ports.js";
+import { createSkill, makeTempHome } from "../support/fs.js";
+
+function captureOutput(): { messages: string[]; output: OutputPort } {
+  const messages: string[] = [];
+  return {
+    messages,
+    output: {
+      intro() {},
+      info() {},
+      success() {},
+      warning() {},
+      error() {},
+      outro() {},
+      write(message) {
+        messages.push(message);
+      },
+    },
+  };
+}
+
+describe("route command", () => {
+  it("returns immediately readable candidates without active skills", async () => {
+    const home = await makeTempHome();
+    const parked = join(home, ".skillpark", "skills", "codex");
+    await createSkill(parked, "documents", {
+      name: "documents",
+      description: "Create and edit Word documents.",
+    });
+    await createSkill(parked, "imagegen", {
+      name: "imagegen",
+      description: "Generate and edit images.",
+    });
+    await createSkill(join(home, ".codex", "skills"), "active-documents", {
+      name: "active-documents",
+      description: "Create Word documents.",
+    });
+    const { messages, output } = captureOutput();
+
+    await createProgram(
+      createCommandContext({ homeDir: home, output }),
+    ).parseAsync([
+      "node",
+      "skillpark",
+      "route",
+      "codex",
+      "create a Word contract",
+    ]);
+
+    const result = messages[0] ?? "";
+    expect(result).toContain("2 checked; full catalog omitted");
+    expect(result).toContain("Candidate 1:");
+    expect(result).toContain("Entry name: documents");
+    expect(result).toContain("Description: Create and edit Word documents.");
+    expect(result).not.toContain("Entry name: imagegen");
+    expect(() => JSON.parse(result)).toThrow();
+  });
+
+  it("shares routing behavior with the hook service", async () => {
+    const home = await makeTempHome();
+    const parked = join(home, ".skillpark", "skills", "claude");
+    await createSkill(parked, "slides", {
+      name: "slides",
+      description: "Create PowerPoint presentations.",
+    });
+
+    await expect(
+      routeParkedSkills("claude", "做一个演示文稿", home),
+    ).resolves.toMatchObject({
+      catalogSize: 1,
+      matches: [expect.objectContaining({ entryName: "slides" })],
+    });
+  });
+
+  it("validates the candidate limit", async () => {
+    const home = await makeTempHome();
+
+    await expect(
+      createProgram(createCommandContext({ homeDir: home })).parseAsync([
+        "node",
+        "skillpark",
+        "route",
+        "codex",
+        "request",
+        "--limit",
+        "0",
+      ]),
+    ).rejects.toEqual(
+      new UsageError("Route limit must be an integer from 1 to 10"),
+    );
+  });
+});

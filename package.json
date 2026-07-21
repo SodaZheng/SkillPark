@@ -1,0 +1,66 @@
+{
+  "name": "skillpark",
+  "version": "0.1.0",
+  "description": "Park agent skills and load them on demand.",
+  "keywords": [
+    "agent",
+    "ai-agent",
+    "cli",
+    "skills",
+    "skill-manager"
+  ],
+  "homepage": "https://github.com/SodaZheng/SkillPark#readme",
+  "bugs": {
+    "url": "https://github.com/SodaZheng/SkillPark/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SodaZheng/SkillPark.git"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Soda",
+    "email": "shudazheng@gmail.com",
+    "url": "https://github.com/SodaZheng"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "skillpark": "dist/cli.js",
+    "spk": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --exclude tests/e2e/**",
+    "test:watch": "vitest --exclude tests/e2e/**",
+    "test:e2e": "npm run build && vitest run tests/e2e/cli.test.ts",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@clack/core": "^1.4.3",
+    "@clack/prompts": "^1.7.0",
+    "commander": "^14.0.3",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.4",
+    "@types/node": "^22.20.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
