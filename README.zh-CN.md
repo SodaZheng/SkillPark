@@ -78,6 +78,36 @@ SkillPark 围绕三个目标设计：
 - npm（用于全局安装）
 - 仅从 Git 仓库新增技能时需要 Git
 
+## 自定义 Agent 配置目录
+
+SkillPark 会读取 Agent 自己的配置目录环境变量，因此自定义的全局技能目录和 Hook 配置不会
+被误写回默认的 home 目录：
+
+| Agent | 原生环境变量 | SkillPark 解析结果 |
+| --- | --- | --- |
+| Claude Code | `CLAUDE_CONFIG_DIR` | `<value>/skills`、`<value>/settings.json` |
+| Codex | `CODEX_HOME` | `<value>/skills`、`<value>/hooks.json` |
+| Gemini CLI | `GEMINI_CLI_HOME` | `<value>/.gemini/skills`、`<value>/.gemini/settings.json` |
+| Qwen Code | `QWEN_HOME` | `<value>/skills`、`<value>/settings.json` |
+
+所有支持的 Agent 还可以使用统一覆盖变量
+`SKILLPARK_<AGENT_ID>_CONFIG_DIR`；其中 Agent id 转成大写，并把连字符替换为下划线。例如：
+
+```bash
+export SKILLPARK_CLAUDE_CONFIG_DIR=~/home/soda/.claude
+export SKILLPARK_GITHUB_COPILOT_CONFIG_DIR=/mnt/agent-config/copilot
+skillpark agents
+```
+
+统一覆盖变量直接指向该 Agent 的配置根目录。SkillPark 会保留目标原有的技能子目录布局；
+例如 AstrBot 仍使用 `<config>/data/skills`。对于默认位于 `~/.config` 下的目标，SkillPark
+也会识别 `XDG_CONFIG_HOME`。优先级为 SkillPark 专用覆盖、Agent 原生变量、
+`XDG_CONFIG_HOME`、默认 home 路径。`~` 会按当前用户 home 展开，相对路径按当前工作目录
+解析。
+
+自定义配置根目录必须已经存在且是普通目录，不能是符号链接。项目级技能路径和
+`~/.skillpark/skills/<agent>/` 停放目录不受这些变量影响。
+
 ## 安装
 
 ```bash

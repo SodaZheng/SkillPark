@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { getAgentDefinition, getAgentPaths } from "../agents/registry.js";
-import type { AgentId } from "../domain/agents.js";
+import type { AgentConfigDirs, AgentId } from "../domain/agents.js";
 import type { SkillEntry } from "../domain/skills.js";
 import { scanSkillEntries } from "../skills/scan.js";
 import { findNameConflicts } from "../storage/plan.js";
@@ -25,8 +25,9 @@ export async function collectAgentStatus(
   agent: AgentId,
   homeDir: string,
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): Promise<AgentStatus> {
-  const paths = getAgentPaths(agent, homeDir, cwd);
+  const paths = getAgentPaths(agent, homeDir, cwd, configDirs);
   const [active, parked] = await Promise.all([
     scanSkillEntries(paths.active, "active"),
     scanSkillEntries(paths.parked, "parked"),
@@ -154,7 +155,12 @@ export function registerListCommand(
       const statuses = (
         await Promise.all(
           agents.map((id) =>
-            collectAgentStatus(id, context.homeDir, context.cwd),
+            collectAgentStatus(
+              id,
+              context.homeDir,
+              context.cwd,
+              context.agentConfigDirs,
+            ),
           ),
         )
       ).map((status) => filterStatus(status, options));

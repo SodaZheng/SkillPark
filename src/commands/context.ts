@@ -1,5 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveAgentConfigDirs } from "../agents/registry.js";
+import type { AgentConfigDirs } from "../domain/agents.js";
 import { createJournalStore, type JournalStore } from "../storage/journal.js";
 import { createNodeItemExecutor } from "../storage/node-item-executor.js";
 import type { ItemExecutor } from "../storage/execute-transaction.js";
@@ -11,6 +13,7 @@ import type { InputPort, OutputPort, PromptPort } from "../tui/ports.js";
 export interface CommandContext {
   homeDir: string;
   cwd: string;
+  agentConfigDirs: AgentConfigDirs;
   prompts: PromptPort;
   output: OutputPort;
   journals: JournalStore;
@@ -33,10 +36,13 @@ export function createCommandContext(
   overrides: Partial<CommandContext> = {},
 ): CommandContext {
   const homeDir = overrides.homeDir ?? homedir();
+  const cwd = overrides.cwd ?? process.cwd();
   const ui = createClackUi();
   return {
     homeDir,
-    cwd: overrides.cwd ?? process.cwd(),
+    cwd,
+    agentConfigDirs:
+      overrides.agentConfigDirs ?? resolveAgentConfigDirs(homeDir, cwd),
     prompts: overrides.prompts ?? ui.prompts,
     output: overrides.output ?? ui.output,
     journals:

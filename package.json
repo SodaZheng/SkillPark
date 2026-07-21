@@ -1,6 +1,6 @@
 {
   "name": "skillpark",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Park agent skills and load them on demand.",
   "keywords": [
     "agent",

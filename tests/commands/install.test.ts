@@ -406,6 +406,27 @@ describe("install command", () => {
     expect(await context.journals.list()).toEqual([]);
   });
 
+  it("installs the global skill and hook into a custom agent config directory", async () => {
+    const home = await makeTempHome();
+    const customConfig = await makeTempHome();
+    const context = createCommandContext({
+      homeDir: home,
+      agentConfigDirs: { claude: customConfig },
+    });
+
+    await runInstall("claude", context);
+
+    await expect(
+      readFile(join(customConfig, "skills", "skillpark", "SKILL.md"), "utf8"),
+    ).resolves.toContain("SkillPark Read-Only Gateway");
+    expect(
+      hookCommands(await readJson(join(customConfig, "settings.json"))),
+    ).toContain("skillpark hook claude");
+    await expect(access(join(home, ".claude"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("force-replaces a different current-project skill without duplicating the hook", async () => {
     const home = await makeTempHome();
     const current = await makeTempHome();

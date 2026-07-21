@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { gatewayContext, gatewayHookCommand } from "../context.js";
 import type { GatewayHookAdapter } from "../types.js";
 
@@ -11,9 +11,11 @@ const event = "userPromptTransformed";
 export const copilotHookAdapter: GatewayHookAdapter = {
   id: "copilot",
   event,
-  configPath: ({ cwd, homeDir, scope }) =>
+  configPath: ({ cwd, globalConfigDir, homeDir, scope }) =>
     scope === "global"
-      ? join(homeDir, ".copilot/settings.json")
+      ? globalConfigDir === undefined
+        ? join(homeDir, ".copilot/settings.json")
+        : join(globalConfigDir, basename(".copilot/settings.json"))
       : join(cwd, ".github/copilot/settings.json"),
   merge(configuration, agent) {
     const existingHooks = configuration.hooks;

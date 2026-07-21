@@ -49,7 +49,11 @@ export async function selectAgent(
     );
   }
 
-  const detections = await detectAgents(context.homeDir, context.cwd);
+  const detections = await detectAgents(
+    context.homeDir,
+    context.cwd,
+    context.agentConfigDirs,
+  );
   const choices = agentSelectionChoices(detections, options.allowedAgents);
   if (choices.length === 0) {
     throw new UsageError("No supported agents are available for this command.");

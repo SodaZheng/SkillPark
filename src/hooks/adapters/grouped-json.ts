@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type {
   AgentId,
   AgentScope,
@@ -37,9 +37,11 @@ export function createGroupedJsonHookAdapter(options: {
     ...(options.initialConfiguration === undefined
       ? {}
       : { initialConfiguration: options.initialConfiguration }),
-    configPath: ({ cwd, homeDir, scope }) =>
+    configPath: ({ cwd, globalConfigDir, homeDir, scope }) =>
       scope === "global"
-        ? join(homeDir, options.globalConfig)
+        ? globalConfigDir === undefined
+          ? join(homeDir, options.globalConfig)
+          : join(globalConfigDir, basename(options.globalConfig))
         : join(cwd, options.projectConfig),
     merge(configuration, agent) {
       const existingHooks = configuration.hooks;

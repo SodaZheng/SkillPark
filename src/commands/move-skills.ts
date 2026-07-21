@@ -30,8 +30,18 @@ export async function runMoveSkills(
 ): Promise<void> {
   const agent = parseAgentId(agentArgument);
   await recoverPendingTransactions(context);
-  await assertSafeAgentRoots(context.homeDir, agent, context.cwd);
-  const paths = getAgentPaths(agent, context.homeDir, context.cwd);
+  await assertSafeAgentRoots(
+    context.homeDir,
+    agent,
+    context.cwd,
+    context.agentConfigDirs,
+  );
+  const paths = getAgentPaths(
+    agent,
+    context.homeDir,
+    context.cwd,
+    context.agentConfigDirs,
+  );
   const [active, parked] = await Promise.all([
     scanSkillEntries(paths.active, "active"),
     scanSkillEntries(paths.parked, "parked"),
@@ -82,7 +92,12 @@ export async function runMoveSkills(
   );
   if (selected.length === 0) return;
   const plan = buildMovePlan({ action, agent, selected, paths });
-  await assertSafeAgentRoots(context.homeDir, agent, context.cwd);
+  await assertSafeAgentRoots(
+    context.homeDir,
+    agent,
+    context.cwd,
+    context.agentConfigDirs,
+  );
   await preflightTransaction(plan);
   context.output.info(
     plan.items.map((item) => `${item.source} → ${item.destination}`).join("\n"),
@@ -92,7 +107,12 @@ export async function runMoveSkills(
   );
   if (confirmed !== true) return;
 
-  await assertSafeAgentRoots(context.homeDir, agent, context.cwd);
+  await assertSafeAgentRoots(
+    context.homeDir,
+    agent,
+    context.cwd,
+    context.agentConfigDirs,
+  );
   await preflightTransaction(plan);
   await executeTransaction(
     plan,
@@ -100,6 +120,7 @@ export async function runMoveSkills(
       context.homeDir,
       context.executor,
       context.cwd,
+      context.agentConfigDirs,
     ),
     context.journals,
   );

@@ -3,7 +3,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import type { Command } from "commander";
 import { detectAgents, getAgentPaths } from "../agents/registry.js";
-import type { AgentId } from "../domain/agents.js";
+import type { AgentConfigDirs, AgentId } from "../domain/agents.js";
 import type { SkillEntry } from "../domain/skills.js";
 import { discoverSourceSkills } from "../sources/discover.js";
 import { parseSource } from "../sources/parse.js";
@@ -47,8 +47,9 @@ async function assertAddItemTargetsAvailable(
   homeDir: string,
   cwd: string,
   item: TransactionItem,
+  configDirs: AgentConfigDirs = {},
 ): Promise<void> {
-  const paths = getAgentPaths(item.agent, homeDir, cwd);
+  const paths = getAgentPaths(item.agent, homeDir, cwd, configDirs);
   const active = join(paths.active, item.entryName);
   if (await pathOccupied(active)) throw addNameConflict(active);
   const parked = join(paths.parked, item.entryName);
@@ -61,9 +62,10 @@ async function assertAddPlanTargetsAvailable(
   homeDir: string,
   cwd: string,
   plan: TransactionPlan,
+  configDirs: AgentConfigDirs = {},
 ): Promise<void> {
   for (const item of plan.items) {
-    await assertAddItemTargetsAvailable(homeDir, cwd, item);
+    await assertAddItemTargetsAvailable(homeDir, cwd, item, configDirs);
   }
 }
 
@@ -71,12 +73,18 @@ function createAddGuardedExecutor(
   homeDir: string,
   cwd: string,
   executor: ItemExecutor,
+  configDirs: AgentConfigDirs = {},
 ): ItemExecutor {
-  const rootGuarded = createAgentRootGuardedExecutor(homeDir, executor, cwd);
+  const rootGuarded = createAgentRootGuardedExecutor(
+    homeDir,
+    executor,
+    cwd,
+    configDirs,
+  );
   return {
     async apply(item) {
-      await assertSafeAgentRoots(homeDir, item.agent, cwd);
-      await assertAddItemTargetsAvailable(homeDir, cwd, item);
+      await assertSafeAgentRoots(homeDir, item.agent, cwd, configDirs);
+      await assertAddItemTargetsAvailable(homeDir, cwd, item, configDirs);
       await rootGuarded.apply(item);
     },
     revert: (item) => rootGuarded.revert(item),
@@ -129,7 +137,7 @@ async function executeStagedAdd(
   let skills: Awaited<ReturnType<typeof discoverSourceSkills>>;
   try {
     [agents, skills] = await Promise.all([
-      detectAgents(context.homeDir, context.cwd),
+      detectAgents(context.homeDir, context.cwd, context.agentConfigDirs),
       discoverSourceSkills(staged.root, staged.rootEntryName),
     ]);
   } catch (error) {
@@ -168,13 +176,23 @@ async function executeStagedAdd(
       agentIds.push(offered.id);
     }
   }
-  await assertSafeSelectedAgentRoots(context.homeDir, agentIds, context.cwd);
+  await assertSafeSelectedAgentRoots(
+    context.homeDir,
+    agentIds,
+    context.cwd,
+    context.agentConfigDirs,
+  );
 
   const choices = await Promise.all(
     skills.map(async (skill) => {
       const occupied: string[] = [];
       for (const agent of agentIds) {
-        const paths = getAgentPaths(agent, context.homeDir, context.cwd);
+        const paths = getAgentPaths(
+          agent,
+          context.homeDir,
+          context.cwd,
+          context.agentConfigDirs,
+        );
         if (await pathOccupied(join(paths.active, skill.entryName))) {
           occupied.push(`${agent}: active`);
         }
@@ -240,15 +258,30 @@ async function executeStagedAdd(
         operation: "copy" as const,
         source: skill.path,
         destination: join(
-          getAgentPaths(agent, context.homeDir, context.cwd).parked,
+          getAgentPaths(
+            agent,
+            context.homeDir,
+            context.cwd,
+            context.agentConfigDirs,
+          ).parked,
           skill.entryName,
         ),
       })),
     ),
   };
 
-  await assertSafeSelectedAgentRoots(context.homeDir, agentIds, context.cwd);
-  await assertAddPlanTargetsAvailable(context.homeDir, context.cwd, plan);
+  await assertSafeSelectedAgentRoots(
+    context.homeDir,
+    agentIds,
+    context.cwd,
+    context.agentConfigDirs,
+  );
+  await assertAddPlanTargetsAvailable(
+    context.homeDir,
+    context.cwd,
+    plan,
+    context.agentConfigDirs,
+  );
   await preflightTransaction(plan);
   context.output.info(
     plan.items.map((item) => `${item.destination} ← ${item.source}`).join("\n"),
@@ -257,8 +290,18 @@ async function executeStagedAdd(
     `Install ${chosen.length} skill${chosen.length === 1 ? "" : "s"} into SkillPark for ${agentIds.length} agent${agentIds.length === 1 ? "" : "s"}?`,
   );
   if (confirmed !== true) return;
-  await assertSafeSelectedAgentRoots(context.homeDir, agentIds, context.cwd);
-  await assertAddPlanTargetsAvailable(context.homeDir, context.cwd, plan);
+  await assertSafeSelectedAgentRoots(
+    context.homeDir,
+    agentIds,
+    context.cwd,
+    context.agentConfigDirs,
+  );
+  await assertAddPlanTargetsAvailable(
+    context.homeDir,
+    context.cwd,
+    plan,
+    context.agentConfigDirs,
+  );
 
   const installationProgress = context.output.progress?.(plan.items.length);
   installationProgress?.start(
@@ -268,6 +311,7 @@ async function executeStagedAdd(
     context.homeDir,
     context.cwd,
     context.executor,
+    context.agentConfigDirs,
   );
   const reportingExecutor: ItemExecutor = {
     async apply(item) {

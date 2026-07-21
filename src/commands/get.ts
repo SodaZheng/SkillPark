@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Command } from "commander";
 import { getAgentPaths } from "../agents/registry.js";
-import type { AgentId } from "../domain/agents.js";
+import type { AgentConfigDirs, AgentId } from "../domain/agents.js";
 import { UsageError } from "../domain/errors.js";
 import { scanSkillEntries } from "../skills/scan.js";
 import { validateEntryName } from "../sources/entry-name.js";
@@ -15,12 +15,13 @@ export async function getParkedSkill(
   entryName: string,
   homeDir: string,
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): Promise<{ root: string; instructionFile: string; instructions: string }> {
   const normalizedEntryName = validateEntryName(
     entryName.startsWith("/") ? entryName.slice(1) : entryName,
     "parked skill name",
   );
-  const paths = getAgentPaths(agent, homeDir, cwd);
+  const paths = getAgentPaths(agent, homeDir, cwd, configDirs);
   const entries = await scanSkillEntries(paths.parked, "parked");
   const entry = entries.find(
     (candidate) => candidate.entryName === normalizedEntryName,
@@ -80,6 +81,7 @@ With one argument, it is the skill name and Agent is prompted.`,
           entryName,
           context.homeDir,
           context.cwd,
+          context.agentConfigDirs,
         );
         context.output.write(
           `Skill root: ${result.root}\nInstruction file: ${result.instructionFile}\n\n${result.instructions}`,

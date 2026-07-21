@@ -85,6 +85,41 @@ add a Git source.
 - npm (for global installation)
 - Git only when adding skills from Git repositories
 
+## Custom agent config directories
+
+SkillPark reads the agents' own config-directory environment variables, so a
+custom global skill root and hook configuration are not written back to the
+default home directory:
+
+| Agent | Native environment variable | Resolved by SkillPark as |
+| --- | --- | --- |
+| Claude Code | `CLAUDE_CONFIG_DIR` | `<value>/skills`, `<value>/settings.json` |
+| Codex | `CODEX_HOME` | `<value>/skills`, `<value>/hooks.json` |
+| Gemini CLI | `GEMINI_CLI_HOME` | `<value>/.gemini/skills`, `<value>/.gemini/settings.json` |
+| Qwen Code | `QWEN_HOME` | `<value>/skills`, `<value>/settings.json` |
+
+Every supported agent also accepts a uniform
+`SKILLPARK_<AGENT_ID>_CONFIG_DIR` override. Uppercase the agent id and replace
+hyphens with underscores, for example:
+
+```bash
+export SKILLPARK_CLAUDE_CONFIG_DIR=~/home/soda/.claude
+export SKILLPARK_GITHUB_COPILOT_CONFIG_DIR=/mnt/agent-config/copilot
+skillpark agents
+```
+
+The uniform override points directly to that agent's config root. SkillPark
+preserves the target's existing skill subdirectory layout; for example,
+AstrBot still uses `<config>/data/skills`. Targets whose default global skill
+root is under `~/.config` also honor `XDG_CONFIG_HOME`. Precedence is the
+SkillPark-specific override, the agent-native variable, `XDG_CONFIG_HOME`, and
+finally the default home path. `~` expands against the current user's home and
+relative paths resolve from the current working directory.
+
+The custom config root must already exist as a real directory, not a symlink.
+Project-level skill paths and the `~/.skillpark/skills/<agent>/` parking roots
+are unchanged.
+
 ## Installation
 
 ```bash

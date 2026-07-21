@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, rename, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Command } from "commander";
 import {
   getAgentSkillRoot,
@@ -97,12 +97,16 @@ function installLocations(
   context: CommandContext,
   scope: InstallScope,
 ): InstallLocations {
-  const boundary = scope === "global" ? context.homeDir : context.cwd;
+  const boundary =
+    scope === "global"
+      ? (context.agentConfigDirs[agent] ?? context.homeDir)
+      : context.cwd;
   const skillRoot = getAgentSkillRoot(
     agent,
     scope,
     context.homeDir,
     context.cwd,
+    context.agentConfigDirs,
   );
   return {
     boundary,
@@ -139,8 +143,14 @@ function createInstallGuardedExecutor(
   source: string,
   destination: string,
   executor: ItemExecutor,
+  configDirs: CommandContext["agentConfigDirs"],
 ): ItemExecutor {
-  const guarded = createAgentRootGuardedExecutor(homeDir, executor, cwd);
+  const guarded = createAgentRootGuardedExecutor(
+    homeDir,
+    executor,
+    cwd,
+    configDirs,
+  );
   return {
     async apply(item) {
       assertInstallItem(item, agent, source, destination);
@@ -208,7 +218,12 @@ async function installGlobalSkill(
   destination: string,
   context: CommandContext,
 ): Promise<void> {
-  await assertSafeAgentRoots(context.homeDir, agent, context.cwd);
+  await assertSafeAgentRoots(
+    context.homeDir,
+    agent,
+    context.cwd,
+    context.agentConfigDirs,
+  );
   const plan: TransactionPlan = {
     id: randomUUID(),
     action: "install",
@@ -235,6 +250,7 @@ async function installGlobalSkill(
       source,
       destination,
       context.executor,
+      context.agentConfigDirs,
     ),
     context.journals,
   );
@@ -345,7 +361,12 @@ export async function runInstall(
   } else if (skillDisposition === "replace") {
     context.output.info(`${locations.skillDestination} ⇐ ${source}`);
     if (scope === "global") {
-      await assertSafeAgentRoots(context.homeDir, agent, context.cwd);
+      await assertSafeAgentRoots(
+        context.homeDir,
+        agent,
+        context.cwd,
+        context.agentConfigDirs,
+      );
     }
     await replaceSkill(source, locations);
     context.output.success(
@@ -360,7 +381,11 @@ export async function runInstall(
   if (hookPlan !== undefined) {
     if (hookPlan.changed) {
       await writeHookConfiguration(
-        scope === "global" ? context.homeDir : context.cwd,
+        scope === "global"
+          ? context.agentConfigDirs[agent] === undefined
+            ? context.homeDir
+            : dirname(context.agentConfigDirs[agent])
+          : context.cwd,
         hookPlan,
       );
       context.output.success(
@@ -396,6 +421,7 @@ export async function runInteractiveInstall(
               "global",
               context.homeDir,
               context.cwd,
+              context.agentConfigDirs,
             ),
           },
         ]
@@ -403,7 +429,13 @@ export async function runInteractiveInstall(
     {
       value: "current",
       label: "Current project",
-      hint: getAgentSkillRoot(agent, "current", context.homeDir, context.cwd),
+      hint: getAgentSkillRoot(
+        agent,
+        "current",
+        context.homeDir,
+        context.cwd,
+        context.agentConfigDirs,
+      ),
     },
   ];
   const selectedScope = await context.prompts.selectOne(

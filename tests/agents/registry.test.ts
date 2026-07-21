@@ -8,6 +8,7 @@ import {
   getAgentPaths,
   listAgentDefinitions,
   parseAgentId,
+  resolveAgentConfigDirs,
 } from "../../src/agents/registry.js";
 
 const homes: string[] = [];
@@ -43,6 +44,47 @@ describe("agent registry", () => {
     ).toThrow("does not support global skill installation");
   });
 
+  it("resolves native and SkillPark-specific custom config directories", () => {
+    const home = "/home/tester";
+    const cwd = "/work/repo";
+    const configDirs = resolveAgentConfigDirs(home, cwd, {
+      CLAUDE_CONFIG_DIR: "~/profiles/claude",
+      CODEX_HOME: "/state/codex",
+      GEMINI_CLI_HOME: "/state/gemini-home",
+      QWEN_HOME: "../qwen-profile",
+      SKILLPARK_CLAUDE_CONFIG_DIR: "/skillpark/claude",
+    });
+
+    expect(configDirs).toMatchObject({
+      claude: "/skillpark/claude",
+      codex: "/state/codex",
+      "gemini-cli": join("/state/gemini-home", ".gemini"),
+      "qwen-code": "/work/qwen-profile",
+    });
+    expect(getAgentPaths("claude", home, cwd, configDirs).active).toBe(
+      join("/skillpark/claude", "skills"),
+    );
+  });
+
+  it("preserves nested skill layouts and honors XDG_CONFIG_HOME", () => {
+    const home = "/home/tester";
+    const cwd = "/work/repo";
+    const configDirs = resolveAgentConfigDirs(home, cwd, {
+      SKILLPARK_ASTRBOT_CONFIG_DIR: "/state/astrbot",
+      XDG_CONFIG_HOME: "/state/xdg",
+    });
+
+    expect(getAgentPaths("astrbot", home, cwd, configDirs).active).toBe(
+      join("/state/astrbot", "data", "skills"),
+    );
+    expect(getAgentPaths("opencode", home, cwd, configDirs).active).toBe(
+      join("/state/xdg", "opencode", "skills"),
+    );
+    expect(getAgentPaths("amp", home, cwd, configDirs).active).toBe(
+      join("/state/xdg", "agents", "skills"),
+    );
+  });
+
   it("marks an agent detected when its config root exists", async () => {
     const home = await mkdtemp(join(tmpdir(), "skillpark-agent-"));
     homes.push(home);
@@ -54,6 +96,20 @@ describe("agent registry", () => {
     );
     expect(detected.find((agent) => agent.id === "codex")).toEqual(
       expect.objectContaining({ detected: true }),
+    );
+  });
+
+  it("detects an agent at its custom config directory", async () => {
+    const home = await mkdtemp(join(tmpdir(), "skillpark-agent-"));
+    const custom = await mkdtemp(join(tmpdir(), "skillpark-claude-"));
+    homes.push(home, custom);
+    const detected = await detectAgents(home, home, { claude: custom });
+
+    expect(detected.find((agent) => agent.id === "claude")).toEqual(
+      expect.objectContaining({
+        detected: true,
+        paths: expect.objectContaining({ active: join(custom, "skills") }),
+      }),
     );
   });
 });

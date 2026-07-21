@@ -8,13 +8,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import type { AgentId, AgentScope } from "../domain/agents.js";
+import type { AgentConfigDirs, AgentId, AgentScope } from "../domain/agents.js";
 import { assertSafeRootWithinBoundary } from "../commands/path-safety.js";
 import type { GatewayHookAdapter } from "./types.js";
 
 export interface HookConfigContext {
   cwd: string;
   homeDir: string;
+  agentConfigDirs: AgentConfigDirs;
 }
 
 export interface HookConfigurationPlan {
@@ -44,9 +45,17 @@ export async function preflightHookConfiguration(
   context: HookConfigContext,
   scope: AgentScope,
 ): Promise<HookConfigurationPlan> {
-  const boundary = scope === "global" ? context.homeDir : context.cwd;
+  const globalConfigDir =
+    scope === "global" ? context.agentConfigDirs[agent] : undefined;
+  const boundary =
+    scope === "global"
+      ? globalConfigDir === undefined
+        ? context.homeDir
+        : dirname(globalConfigDir)
+      : context.cwd;
   const hookConfig = adapter.configPath({
     cwd: context.cwd,
+    ...(globalConfigDir === undefined ? {} : { globalConfigDir }),
     homeDir: context.homeDir,
     scope,
   });

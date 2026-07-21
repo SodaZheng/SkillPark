@@ -24,7 +24,11 @@ function compactPath(path: string, root: string, prefix: "." | "~"): string {
 }
 
 export async function runListAgents(context: CommandContext): Promise<void> {
-  const detections = await detectAgents(context.homeDir, context.cwd);
+  const detections = await detectAgents(
+    context.homeDir,
+    context.cwd,
+    context.agentConfigDirs,
+  );
   const agents = detections.map((detection) => {
     const definition = getAgentDefinition(detection.id);
     return {
@@ -39,6 +43,7 @@ export async function runListAgents(context: CommandContext): Promise<void> {
               "global",
               context.homeDir,
               context.cwd,
+              context.agentConfigDirs,
             ),
             context.homeDir,
             "~",
@@ -50,6 +55,7 @@ export async function runListAgents(context: CommandContext): Promise<void> {
           "current",
           context.homeDir,
           context.cwd,
+          context.agentConfigDirs,
         ),
         context.cwd,
         ".",

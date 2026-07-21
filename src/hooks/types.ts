@@ -10,6 +10,7 @@ export interface HookLocationContext {
   cwd: string;
   homeDir: string;
   scope: AgentScope;
+  globalConfigDir?: string;
 }
 
 export interface GatewayHookAdapter {

@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { getAgentPaths } from "../agents/registry.js";
+import type { AgentConfigDirs } from "../domain/agents.js";
 import { CommandCancelledError } from "../domain/errors.js";
 import { validateEntryName } from "../sources/entry-name.js";
 import {
@@ -33,6 +34,7 @@ function validateRecoveryRecord(
   record: TransactionRecord,
   homeDir: string,
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): void {
   if (record.action === "add" && record.sourceStage === undefined) {
     throw manualRecovery("add transaction is missing source-stage ownership");
@@ -49,7 +51,7 @@ function validateRecoveryRecord(
         `unsafe entry name: ${JSON.stringify(item.entryName)}`,
       );
     }
-    const paths = getAgentPaths(item.agent, homeDir, cwd);
+    const paths = getAgentPaths(item.agent, homeDir, cwd, configDirs);
     const active = join(paths.active, item.entryName);
     const parked = join(paths.parked, item.entryName);
     if (record.action === "store") {
@@ -119,10 +121,16 @@ function createRecoveryExecutor(
   homeDir: string,
   cwd: string,
   executor: ItemExecutor,
+  configDirs: AgentConfigDirs = {},
 ): ItemExecutor {
-  const guarded = createAgentRootGuardedExecutor(homeDir, executor, cwd);
+  const guarded = createAgentRootGuardedExecutor(
+    homeDir,
+    executor,
+    cwd,
+    configDirs,
+  );
   const requireMembership = (item: TransactionItem) => {
-    validateRecoveryRecord(record, homeDir, cwd);
+    validateRecoveryRecord(record, homeDir, cwd, configDirs);
     if (!record.items.some((original) => sameItemIdentity(original, item))) {
       throw manualRecovery(`executor item is outside transaction ${record.id}`);
     }
@@ -155,11 +163,17 @@ export async function recoverPendingTransactions(
   }
 
   for (const record of records) {
-    validateRecoveryRecord(record, context.homeDir, context.cwd);
+    validateRecoveryRecord(
+      record,
+      context.homeDir,
+      context.cwd,
+      context.agentConfigDirs,
+    );
     await assertSafeSelectedAgentRoots(
       context.homeDir,
       [...new Set(record.items.map((item) => item.agent))],
       context.cwd,
+      context.agentConfigDirs,
     );
     const options =
       record.sourceStage === undefined
@@ -188,6 +202,7 @@ export async function recoverPendingTransactions(
         context.homeDir,
         context.cwd,
         context.executor,
+        context.agentConfigDirs,
       ),
       context.journals,
       options,

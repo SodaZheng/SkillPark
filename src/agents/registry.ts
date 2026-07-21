@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { access } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   AGENT_IDS,
+  type AgentConfigDirs,
   type AgentDefinition,
   type AgentDetection,
   type AgentId,
@@ -226,17 +227,126 @@ export function supportsGlobalSkills(agent: AgentId): boolean {
   return definitions[agent].globalSkillsDir !== undefined;
 }
 
+const nativeConfigEnvironments: Partial<
+  Record<AgentId, { name: string; suffix?: string }>
+> = {
+  claude: { name: "CLAUDE_CONFIG_DIR" },
+  codex: { name: "CODEX_HOME" },
+  "gemini-cli": { name: "GEMINI_CLI_HOME", suffix: ".gemini" },
+  "qwen-code": { name: "QWEN_HOME" },
+};
+
+function customConfigEnvironment(agent: AgentId): string {
+  return `SKILLPARK_${agent.toUpperCase().replaceAll("-", "_")}_CONFIG_DIR`;
+}
+
+function expandConfigPath(value: string, homeDir: string, cwd: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "~") return resolve(homeDir);
+  if (trimmed.startsWith(`~${sep}`)) {
+    return resolve(homeDir, trimmed.slice(2));
+  }
+  return isAbsolute(trimmed) ? resolve(trimmed) : resolve(cwd, trimmed);
+}
+
+function xdgConfigDir(
+  definition: AgentDefinition,
+  xdgRoot: string,
+): string | undefined {
+  const globalSkillsDir = definition.globalSkillsDir;
+  if (globalSkillsDir === undefined) return undefined;
+  const configDir = defaultConfigDir(definition);
+  const prefix = `.config${sep}`;
+  if (!configDir.startsWith(prefix)) return undefined;
+  return join(xdgRoot, configDir.slice(prefix.length));
+}
+
+function defaultConfigDir(definition: AgentDefinition): string {
+  const globalSkillsDir = definition.globalSkillsDir;
+  if (globalSkillsDir === undefined) {
+    throw new Error(
+      `${definition.label} has no global configuration directory`,
+    );
+  }
+  const marker = definition.detection?.global?.find((candidate) => {
+    const difference = relative(candidate, globalSkillsDir);
+    return (
+      difference !== "" &&
+      difference !== ".." &&
+      !difference.startsWith(`..${sep}`) &&
+      !isAbsolute(difference)
+    );
+  });
+  return marker ?? dirname(globalSkillsDir);
+}
+
+export function resolveAgentConfigDirs(
+  homeDir: string,
+  cwd: string = process.cwd(),
+  environment: NodeJS.ProcessEnv = process.env,
+): AgentConfigDirs {
+  const resolved: AgentConfigDirs = {};
+  const xdgValue = environment.XDG_CONFIG_HOME?.trim();
+  const xdgRoot =
+    xdgValue === undefined || xdgValue === ""
+      ? undefined
+      : expandConfigPath(xdgValue, homeDir, cwd);
+
+  for (const definition of listAgentDefinitions()) {
+    const explicit =
+      environment[customConfigEnvironment(definition.id)]?.trim();
+    if (explicit !== undefined && explicit !== "") {
+      resolved[definition.id] = expandConfigPath(explicit, homeDir, cwd);
+      continue;
+    }
+
+    const native = nativeConfigEnvironments[definition.id];
+    const nativeValue =
+      native === undefined ? undefined : environment[native.name]?.trim();
+    if (nativeValue !== undefined && nativeValue !== "") {
+      const base = expandConfigPath(nativeValue, homeDir, cwd);
+      resolved[definition.id] =
+        native?.suffix === undefined ? base : join(base, native.suffix);
+      continue;
+    }
+
+    if (xdgRoot !== undefined) {
+      const configDir = xdgConfigDir(definition, xdgRoot);
+      if (configDir !== undefined) resolved[definition.id] = configDir;
+    }
+  }
+  return resolved;
+}
+
+export function getAgentConfigDir(
+  agent: AgentId,
+  homeDir: string,
+  configDirs: AgentConfigDirs = {},
+): string | undefined {
+  const definition = definitions[agent];
+  if (definition.globalSkillsDir === undefined) return undefined;
+  return configDirs[agent] ?? join(homeDir, defaultConfigDir(definition));
+}
+
 export function getAgentSkillRoot(
   agent: AgentId,
   scope: AgentScope,
   homeDir: string,
   cwd: string,
+  configDirs: AgentConfigDirs = {},
 ): string {
   const definition = definitions[agent];
   if (scope === "current") return join(cwd, definition.projectSkillsDir);
   if (definition.globalSkillsDir === undefined) {
     throw new UsageError(
       `${definition.label} does not support global skill installation; use the current project scope.`,
+    );
+  }
+  const customConfigDir = configDirs[agent];
+  if (customConfigDir !== undefined) {
+    return join(
+      customConfigDir,
+      relative(defaultConfigDir(definition), definition.globalSkillsDir),
     );
   }
   if (agent === "openclaw") {
@@ -251,6 +361,7 @@ export function getAgentPaths(
   agent: AgentId,
   homeDir: string,
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): AgentPaths {
   const definition = definitions[agent];
   return {
@@ -259,6 +370,7 @@ export function getAgentPaths(
       definition.globalSkillsDir === undefined ? "current" : "global",
       homeDir,
       cwd,
+      configDirs,
     ),
     parked: join(
       homeDir,
@@ -287,17 +399,24 @@ function defaultDetectionRoot(definition: AgentDefinition): string | undefined {
 export async function detectAgents(
   homeDir: string,
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): Promise<AgentDetection[]> {
   return Promise.all(
     listAgentDefinitions().map(async (definition) => {
+      const customConfigDir = configDirs[definition.id];
       const globalMarkers =
-        definition.detection?.global ??
-        (defaultDetectionRoot(definition) === undefined
-          ? []
-          : [defaultDetectionRoot(definition) as string]);
+        customConfigDir === undefined
+          ? (definition.detection?.global ??
+            (defaultDetectionRoot(definition) === undefined
+              ? []
+              : [defaultDetectionRoot(definition) as string]))
+          : [];
       const currentMarkers = definition.detection?.current ?? [];
       const detected = (
         await Promise.all([
+          ...(customConfigDir === undefined
+            ? []
+            : [pathExists(customConfigDir)]),
           ...globalMarkers.map((marker) => pathExists(join(homeDir, marker))),
           ...currentMarkers.map((marker) => pathExists(join(cwd, marker))),
         ])
@@ -306,7 +425,7 @@ export async function detectAgents(
         id: definition.id,
         label: definition.label,
         detected,
-        paths: getAgentPaths(definition.id, homeDir, cwd),
+        paths: getAgentPaths(definition.id, homeDir, cwd, configDirs),
       };
     }),
   );

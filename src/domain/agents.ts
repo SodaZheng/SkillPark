@@ -77,6 +77,7 @@ export const AGENT_IDS = [
 export type AgentId = (typeof AGENT_IDS)[number];
 export type AgentScope = "global" | "current";
 export type HookAdapterId = "claude" | "codex" | "gemini" | "copilot" | "qwen";
+export type AgentConfigDirs = Partial<Record<AgentId, string>>;
 
 export interface AgentPaths {
   active: string;

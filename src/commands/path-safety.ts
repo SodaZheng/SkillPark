@@ -2,7 +2,7 @@ import { lstat, realpath } from "node:fs/promises";
 import * as nativePath from "node:path";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { getAgentPaths, supportsGlobalSkills } from "../agents/registry.js";
-import type { AgentId } from "../domain/agents.js";
+import type { AgentConfigDirs, AgentId } from "../domain/agents.js";
 import type { ItemExecutor } from "../storage/execute-transaction.js";
 
 export interface PathSemantics {
@@ -80,12 +80,13 @@ export async function assertSafeAgentRoots(
   homeDir: string,
   agent: AgentId,
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): Promise<void> {
-  const paths = getAgentPaths(agent, homeDir, cwd);
-  await assertSafeRootWithinBoundary(
-    supportsGlobalSkills(agent) ? homeDir : cwd,
-    paths.active,
-  );
+  const paths = getAgentPaths(agent, homeDir, cwd, configDirs);
+  const activeBoundary = supportsGlobalSkills(agent)
+    ? (configDirs[agent] ?? homeDir)
+    : cwd;
+  await assertSafeRootWithinBoundary(activeBoundary, paths.active);
   await assertSafeRootWithinBoundary(homeDir, paths.parked);
   const [activeRoot, parkedRoot] = await Promise.all([
     prospectivePhysicalPath(paths.active),
@@ -105,22 +106,26 @@ export async function assertSafeSelectedAgentRoots(
   homeDir: string,
   agents: readonly AgentId[],
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): Promise<void> {
-  for (const agent of agents) await assertSafeAgentRoots(homeDir, agent, cwd);
+  for (const agent of agents) {
+    await assertSafeAgentRoots(homeDir, agent, cwd, configDirs);
+  }
 }
 
 export function createAgentRootGuardedExecutor(
   homeDir: string,
   executor: ItemExecutor,
   cwd: string = process.cwd(),
+  configDirs: AgentConfigDirs = {},
 ): ItemExecutor {
   return {
     async apply(item) {
-      await assertSafeAgentRoots(homeDir, item.agent, cwd);
+      await assertSafeAgentRoots(homeDir, item.agent, cwd, configDirs);
       await executor.apply(item);
     },
     async revert(item) {
-      await assertSafeAgentRoots(homeDir, item.agent, cwd);
+      await assertSafeAgentRoots(homeDir, item.agent, cwd, configDirs);
       await executor.revert(item);
     },
   };
