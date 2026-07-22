@@ -155,6 +155,29 @@ function artifactAllowed(
   );
 }
 
+function isCrossDeviceCopyArtifactPair(
+  item: TransactionItem,
+  state: ItemState,
+  owned: ArtifactIdentity[],
+): boolean {
+  if (item.operation !== "move" || owned.length !== 2) return false;
+  const destinationTemp = owned.find(
+    (identity) => identity.role === "destination-temp",
+  );
+  const sourceQuarantine = owned.find(
+    (identity) => identity.role === "source-quarantine",
+  );
+  if (
+    destinationTemp === undefined ||
+    sourceQuarantine === undefined ||
+    destinationTemp.direction !== sourceQuarantine.direction
+  ) {
+    return false;
+  }
+  if (destinationTemp.direction === "forward") return state === "running";
+  return state === "running" || state === "completed";
+}
+
 async function preflightRecovery(record: TransactionRecord): Promise<void> {
   const states = new Map<TransactionItem, ItemState>();
   for (const item of record.items) {
@@ -186,30 +209,52 @@ async function preflightRecovery(record: TransactionRecord): Promise<void> {
   }
 
   for (const { item, state, owned } of evidence) {
-    if (owned.length > 1) {
+    if (
+      owned.length > 1 &&
+      !isCrossDeviceCopyArtifactPair(item, state, owned)
+    ) {
       throw manualRecoveryError(
         `multiple operation artifacts for ${item.entryName}`,
       );
     }
-    const [identity] = owned;
-    if (identity !== undefined && !artifactAllowed(item, state, identity)) {
-      throw manualRecoveryError(
-        `${identity.direction} ${identity.role} artifact is incompatible with ${item.operation}/${state}`,
-      );
+    for (const identity of owned) {
+      if (!artifactAllowed(item, state, identity)) {
+        throw manualRecoveryError(
+          `${identity.direction} ${identity.role} artifact is incompatible with ${item.operation}/${state}`,
+        );
+      }
     }
   }
 }
 
-async function recoverDestinationTemp(item: TransactionItem): Promise<void> {
+async function recoverDestinationTemp(
+  item: TransactionItem,
+  destinationIsVerifiedCopy = false,
+): Promise<void> {
   const state = await inspectOperationArtifact(item, "destination-temp");
   if (state === "absent") return;
   const paths = await requireOwnedOperationArtifact(item, "destination-temp");
-  if ((await exists(paths.payload)) && !(await exists(item.source))) {
+  if (
+    (await exists(paths.payload)) &&
+    !(await exists(item.source)) &&
+    !destinationIsVerifiedCopy
+  ) {
     throw manualRecoveryError(
       `destination-temp may be the only copy for ${item.entryName}`,
     );
   }
   await cleanupOwnedOperationArtifact(item, "destination-temp");
+}
+
+async function recoverEmptyDestinationTemp(
+  item: TransactionItem,
+): Promise<void> {
+  const state = await inspectOperationArtifact(item, "destination-temp");
+  if (state === "absent") return;
+  const paths = await requireOwnedOperationArtifact(item, "destination-temp");
+  if (!(await exists(paths.payload))) {
+    await cleanupOwnedOperationArtifact(item, "destination-temp");
+  }
 }
 
 async function restoreOwnedPayload(
@@ -294,16 +339,22 @@ async function recoverForwardSourceQuarantine(
   const destinationExists = await exists(item.destination);
 
   if (!(await exists(paths.payload))) {
-    await cleanupOwnedOperationArtifact(item, "source-quarantine");
     if (sourceExists && destinationExists) {
-      await removeKnownDestinationCopy(item, executor);
+      throw manualRecoveryError(
+        `ambiguous empty source-quarantine paths for ${item.entryName}`,
+      );
     }
+    await cleanupOwnedOperationArtifact(item, "source-quarantine");
     return;
   }
-  if (sourceExists || !destinationExists) {
+  if (sourceExists) {
     throw manualRecoveryError(
       `ambiguous source-quarantine paths for ${item.entryName}`,
     );
+  }
+  if (!destinationExists) {
+    await restoreOwnedPayload(item, "source-quarantine", item.source);
+    return;
   }
 
   const [quarantineDigest, destinationDigest] = await Promise.all([
@@ -322,18 +373,22 @@ async function recoverForwardSourceQuarantine(
 
 async function recoverReverseSourceQuarantine(
   item: TransactionItem,
-): Promise<void> {
+): Promise<boolean> {
   const state = await inspectOperationArtifact(item, "source-quarantine");
-  if (state === "absent") return;
+  if (state === "absent") return false;
   const paths = await requireOwnedOperationArtifact(item, "source-quarantine");
   if (!(await exists(paths.payload))) {
     await cleanupOwnedOperationArtifact(item, "source-quarantine");
-    return;
+    return false;
   }
-  if ((await exists(item.source)) || !(await exists(item.destination))) {
+  if (await exists(item.source)) {
     throw manualRecoveryError(
       `ambiguous rollback source-quarantine paths for ${item.entryName}`,
     );
+  }
+  if (!(await exists(item.destination))) {
+    await restoreOwnedPayload(item, "source-quarantine", item.source);
+    return false;
   }
   const [quarantineDigest, destinationDigest] = await Promise.all([
     digestTree(paths.payload),
@@ -345,6 +400,7 @@ async function recoverReverseSourceQuarantine(
     );
   }
   await cleanupOwnedOperationArtifact(item, "source-quarantine");
+  return true;
 }
 
 async function recoverArtifacts(
@@ -359,14 +415,17 @@ async function recoverArtifacts(
   }
 
   if (state === "running") {
-    await recoverDestinationTemp(item);
+    await recoverEmptyDestinationTemp(item);
     await recoverForwardSourceQuarantine(item, executor);
+    await recoverDestinationTemp(item);
     await recoverDestinationQuarantine(item);
   }
   if (state === "running" || state === "completed") {
     const reversed = reverseTransactionItem(item);
-    await recoverDestinationTemp(reversed);
-    await recoverReverseSourceQuarantine(reversed);
+    await recoverEmptyDestinationTemp(reversed);
+    const destinationIsVerifiedCopy =
+      await recoverReverseSourceQuarantine(reversed);
+    await recoverDestinationTemp(reversed, destinationIsVerifiedCopy);
   }
 }
 

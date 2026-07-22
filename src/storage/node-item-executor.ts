@@ -12,7 +12,15 @@ import {
   symlink,
   utimes,
 } from "node:fs/promises";
-import { dirname, join, normalize, resolve } from "node:path";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { digestTree } from "./digest-tree.js";
 import type { ItemExecutor } from "./execute-transaction.js";
 import {
@@ -39,6 +47,7 @@ export interface NodeExecutorOptions {
   ): Promise<void>;
   writeMarker?(path: string, content: string): Promise<void>;
   beforeFinalPlacement?(temporary: string, destination: string): Promise<void>;
+  beforeSourceIsolation?(source: string, quarantine: string): Promise<void>;
   beforeQuarantineRestore?(
     quarantine: string,
     destination: string,
@@ -65,6 +74,23 @@ function pathIdentity(path: string): string {
   return process.platform === "win32" || process.platform === "darwin"
     ? identity.toLowerCase()
     : identity;
+}
+
+function rebaseContainedPath(
+  logicalRoot: string,
+  physicalRoot: string,
+  candidate: string,
+): string {
+  const difference = relative(resolve(logicalRoot), resolve(candidate));
+  if (
+    difference === "" ||
+    (difference !== ".." &&
+      !difference.startsWith(`..${sep}`) &&
+      !isAbsolute(difference))
+  ) {
+    return resolve(physicalRoot, difference);
+  }
+  return candidate;
 }
 
 export async function preflightTransaction(
@@ -133,8 +159,21 @@ export function createNodeItemExecutor(
       ? {}
       : { writeMarker: options.writeMarker }),
   };
+  const sourceArtifactOptions: OperationArtifactOptions = {
+    ...localArtifactOptions,
+    rename: async (source, destination) => {
+      await options.beforeSourceIsolation?.(source, destination);
+      await nodeRename(source, destination);
+    },
+  };
 
-  async function copyLink(source: string, destination: string): Promise<void> {
+  async function copyLink(
+    source: string,
+    destination: string,
+    logicalSource: string,
+    logicalRoot: string,
+    physicalRoot: string,
+  ): Promise<void> {
     const target = await readlink(source);
     if (platform !== "win32") {
       await createSymlink(target, destination);
@@ -143,7 +182,15 @@ export function createNodeItemExecutor(
 
     let type: "dir" | "file" | undefined;
     try {
-      type = (await stat(source)).isDirectory() ? "dir" : "file";
+      const resolvedTarget = isAbsolute(target)
+        ? target
+        : resolve(dirname(logicalSource), target);
+      const physicalTarget = rebaseContainedPath(
+        logicalRoot,
+        physicalRoot,
+        resolvedTarget,
+      );
+      type = (await stat(physicalTarget)).isDirectory() ? "dir" : "file";
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -159,16 +206,32 @@ export function createNodeItemExecutor(
     source: string,
     destination: string,
     deferDirectoryMetadata = false,
+    logicalSource: string = source,
+    logicalRoot: string = logicalSource,
+    physicalRoot: string = source,
   ): Promise<void> {
     const info = await lstat(source);
     if (info.isSymbolicLink()) {
-      await copyLink(source, destination);
+      await copyLink(
+        source,
+        destination,
+        logicalSource,
+        logicalRoot,
+        physicalRoot,
+      );
       return;
     }
     if (info.isDirectory()) {
       await mkdir(destination, { mode: info.mode | 0o700 });
       for (const name of (await readdir(source)).sort()) {
-        await copyEntry(join(source, name), join(destination, name));
+        await copyEntry(
+          join(source, name),
+          join(destination, name),
+          false,
+          join(logicalSource, name),
+          logicalRoot,
+          physicalRoot,
+        );
       }
       if (!deferDirectoryMetadata) {
         await chmod(destination, info.mode);
@@ -213,6 +276,10 @@ export function createNodeItemExecutor(
     item: TransactionItem,
     source: string,
     destination: string,
+    copyOptions: {
+      logicalSource?: string;
+      progress?: { placed: boolean };
+    } = {},
   ): Promise<void> {
     await requireAbsent(destination);
     await mkdir(dirname(destination), { recursive: true });
@@ -224,7 +291,14 @@ export function createNodeItemExecutor(
     let placed = false;
     try {
       const sourceInfo = await lstat(source);
-      await copyEntry(source, temporary.payload, sourceInfo.isDirectory());
+      await copyEntry(
+        source,
+        temporary.payload,
+        sourceInfo.isDirectory(),
+        copyOptions.logicalSource ?? source,
+        copyOptions.logicalSource ?? source,
+        source,
+      );
       const [sourceDigest, copyDigest] = await Promise.all([
         digestTree(source),
         digestTree(temporary.payload),
@@ -237,6 +311,9 @@ export function createNodeItemExecutor(
       await requireAbsent(destination);
       await rename(temporary.payload, destination);
       placed = true;
+      if (copyOptions.progress !== undefined) {
+        copyOptions.progress.placed = true;
+      }
       if (sourceInfo.isDirectory()) {
         await chmod(destination, sourceInfo.mode);
         await utimes(destination, sourceInfo.atime, sourceInfo.mtime);
@@ -305,13 +382,33 @@ export function createNodeItemExecutor(
       if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
     }
 
-    await copyVerified(item, item.source, item.destination);
+    // A cross-device move cannot be atomic. Isolate the source first so a
+    // permission or sharing violation is reported before a destination copy
+    // exists, and so crash recovery always has an owned copy to restore.
+    await requireAbsent(item.destination);
     const quarantine = await moveIntoOperationArtifact(
       item,
       "source-quarantine",
       item.source,
-      localArtifactOptions,
+      sourceArtifactOptions,
     );
+    const progress = { placed: false };
+    try {
+      await copyVerified(item, quarantine.payload, item.destination, {
+        logicalSource: item.source,
+        progress,
+      });
+    } catch (error) {
+      if (!progress.placed) {
+        await restoreArtifactPayload(
+          item,
+          "source-quarantine",
+          item.source,
+          error,
+        );
+      }
+      throw error;
+    }
     const [sourceDigest, destinationDigest] = await Promise.all([
       digestTree(quarantine.payload),
       digestTree(item.destination),

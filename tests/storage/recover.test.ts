@@ -262,6 +262,169 @@ describe("recoverTransaction", () => {
     expect((await journals.list())[0]?.states).toEqual({ pdf: "running" });
   });
 
+  it("recovers the forward source-quarantine and destination-temp pair used by an EXDEV copy", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(source, { recursive: true });
+    await writeFile(join(source, "SKILL.md"), "source");
+    const item = itemFor(source, destination);
+    const sourceQuarantine = await createOwnedMarkerOnlyArtifact(
+      item,
+      "forward",
+      "source-quarantine",
+    );
+    await rename(source, sourceQuarantine.payload);
+    const destinationTemp = await createOwnedMarkerOnlyArtifact(
+      item,
+      "forward",
+      "destination-temp",
+    );
+    await mkdir(destinationTemp.payload, { recursive: true });
+    await writeFile(join(destinationTemp.payload, "partial.md"), "partial");
+    const record = recordFor(item, "running");
+    const journals = createJournalStore(
+      join(home, ".skillpark", ".transactions"),
+    );
+    await journals.save(record);
+
+    await recoverTransaction(record, createNodeItemExecutor(), journals);
+
+    await expect(readFile(join(source, "SKILL.md"), "utf8")).resolves.toBe(
+      "source",
+    );
+    await expect(access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(sourceQuarantine.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(destinationTemp.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await journals.list()).toEqual([]);
+  });
+
+  it("cleans an empty destination-temp marker before reverting a placed EXDEV copy", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(source, { recursive: true });
+    await mkdir(destination, { recursive: true });
+    await writeFile(join(source, "SKILL.md"), "same");
+    await writeFile(join(destination, "SKILL.md"), "same");
+    const item = itemFor(source, destination);
+    const sourceQuarantine = await createOwnedMarkerOnlyArtifact(
+      item,
+      "forward",
+      "source-quarantine",
+    );
+    await rename(source, sourceQuarantine.payload);
+    const destinationTemp = await createOwnedMarkerOnlyArtifact(
+      item,
+      "forward",
+      "destination-temp",
+    );
+    const record = recordFor(item, "running");
+    const journals = createJournalStore(
+      join(home, ".skillpark", ".transactions"),
+    );
+    await journals.save(record);
+
+    await recoverTransaction(record, createNodeItemExecutor(), journals);
+
+    await expect(readFile(join(source, "SKILL.md"), "utf8")).resolves.toBe(
+      "same",
+    );
+    await expect(access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(sourceQuarantine.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(destinationTemp.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await journals.list()).toEqual([]);
+  });
+
+  it("recovers the reverse source-quarantine and destination-temp pair used by EXDEV rollback", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(destination, { recursive: true });
+    await writeFile(join(destination, "SKILL.md"), "destination");
+    const item = itemFor(source, destination);
+    const reversed = reverseTransactionItem(item);
+    const sourceQuarantine = await createOwnedMarkerOnlyArtifact(
+      item,
+      "reverse",
+      "source-quarantine",
+    );
+    await rename(destination, sourceQuarantine.payload);
+    const destinationTemp = await createOwnedMarkerOnlyArtifact(
+      item,
+      "reverse",
+      "destination-temp",
+    );
+    await mkdir(destinationTemp.payload, { recursive: true });
+    await writeFile(join(destinationTemp.payload, "partial.md"), "partial");
+    const record = recordFor(item, "completed");
+    const journals = createJournalStore(
+      join(home, ".skillpark", ".transactions"),
+    );
+    await journals.save(record);
+
+    await recoverTransaction(record, createNodeItemExecutor(), journals);
+
+    await expect(readFile(join(source, "SKILL.md"), "utf8")).resolves.toBe(
+      "destination",
+    );
+    await expect(access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(sourceQuarantine.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(destinationTemp.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await journals.list()).toEqual([]);
+    expect(operationArtifactPaths(reversed, "source-quarantine")).toEqual(
+      sourceQuarantine,
+    );
+  });
+
+  it("preserves both paths when an empty source-quarantine marker cannot prove destination ownership", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(source, { recursive: true });
+    await mkdir(destination, { recursive: true });
+    await writeFile(join(source, "SKILL.md"), "source");
+    await writeFile(join(destination, "SKILL.md"), "occupant");
+    const item = itemFor(source, destination);
+    const sourceQuarantine = await createOwnedMarkerOnlyArtifact(
+      item,
+      "forward",
+      "source-quarantine",
+    );
+    const record = recordFor(item, "running");
+    const journals = createJournalStore(
+      join(home, ".skillpark", ".transactions"),
+    );
+    await journals.save(record);
+
+    await expect(
+      recoverTransaction(record, createNodeItemExecutor(), journals),
+    ).rejects.toThrow(
+      "Manual recovery required: ambiguous empty source-quarantine paths for pdf",
+    );
+
+    await expect(readFile(join(source, "SKILL.md"), "utf8")).resolves.toBe(
+      "source",
+    );
+    await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toBe(
+      "occupant",
+    );
+    await expect(access(sourceQuarantine.marker)).resolves.toBeUndefined();
+    expect(await journals.list()).toHaveLength(1);
+  });
+
   it("preflights a later artifact-state contradiction before cleaning an earlier item", async () => {
     const home = await makeTempHome();
     const firstSource = join(home, "active", "one");
@@ -667,6 +830,41 @@ describe("recoverTransaction", () => {
       "pdf",
     );
     expect(await journals.list()).toEqual([]);
+  });
+
+  it("preserves a destination temp when the source is missing and the destination is unverified", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(destination, { recursive: true });
+    await writeFile(join(destination, "SKILL.md"), "occupant");
+    const item = itemFor(source, destination);
+    const temporary = await createOwnedMarkerOnlyArtifact(
+      item,
+      "forward",
+      "destination-temp",
+    );
+    await mkdir(temporary.payload, { recursive: true });
+    await writeFile(join(temporary.payload, "SKILL.md"), "only safe copy");
+    const record = recordFor(item, "running");
+    const journals = createJournalStore(
+      join(home, ".skillpark", ".transactions"),
+    );
+    await journals.save(record);
+
+    await expect(
+      recoverTransaction(record, createNodeItemExecutor(), journals),
+    ).rejects.toThrow(
+      "Manual recovery required: destination-temp may be the only copy for pdf",
+    );
+
+    await expect(
+      readFile(join(temporary.payload, "SKILL.md"), "utf8"),
+    ).resolves.toBe("only safe copy");
+    await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toBe(
+      "occupant",
+    );
+    expect(await journals.list()).toHaveLength(1);
   });
 
   it.each([

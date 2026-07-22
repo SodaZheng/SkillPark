@@ -252,6 +252,116 @@ describe("node item executor", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("isolates the source before starting an EXDEV copy", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(source, { recursive: true });
+    await writeFile(join(source, "SKILL.md"), "content");
+    const item = moveItem(source, destination);
+    const quarantine = operationArtifactPaths(item, "source-quarantine");
+    let observedIsolation = false;
+    const executor = createNodeItemExecutor({
+      async rename(from, to) {
+        if (from === source && to === destination) {
+          throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
+        }
+        await rename(from, to);
+      },
+      async beforeFinalPlacement() {
+        await expect(access(source)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(
+          readFile(join(quarantine.payload, "SKILL.md"), "utf8"),
+        ).resolves.toBe("content");
+        observedIsolation = true;
+      },
+    });
+
+    await executor.apply(item);
+
+    expect(observedIsolation).toBe(true);
+    await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toBe(
+      "content",
+    );
+    await expect(access(quarantine.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("fails before copying when source isolation is denied", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(source, { recursive: true });
+    await writeFile(join(source, "SKILL.md"), "content");
+    const item = moveItem(source, destination);
+    const quarantine = operationArtifactPaths(item, "source-quarantine");
+    const temporary = operationArtifactPaths(item, "destination-temp");
+    const denied = Object.assign(new Error("source isolation denied"), {
+      code: "EPERM",
+    });
+    const executor = createNodeItemExecutor({
+      async rename(from, to) {
+        if (from === source && to === destination) {
+          throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
+        }
+        await rename(from, to);
+      },
+      async beforeSourceIsolation() {
+        throw denied;
+      },
+    });
+
+    await expect(executor.apply(item)).rejects.toBe(denied);
+
+    await expect(readFile(join(source, "SKILL.md"), "utf8")).resolves.toBe(
+      "content",
+    );
+    await expect(access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(quarantine.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(temporary.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("restores an isolated source when an EXDEV copy fails before placement", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(source, { recursive: true });
+    await writeFile(join(source, "SKILL.md"), "content");
+    const item = moveItem(source, destination);
+    const quarantine = operationArtifactPaths(item, "source-quarantine");
+    const temporary = operationArtifactPaths(item, "destination-temp");
+    const interrupted = new Error("copy interrupted");
+    const executor = createNodeItemExecutor({
+      async rename(from, to) {
+        if (from === source && to === destination) {
+          throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
+        }
+        await rename(from, to);
+      },
+      async beforeFinalPlacement() {
+        throw interrupted;
+      },
+    });
+
+    await expect(executor.apply(item)).rejects.toBe(interrupted);
+
+    await expect(readFile(join(source, "SKILL.md"), "utf8")).resolves.toBe(
+      "content",
+    );
+    await expect(access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(quarantine.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(temporary.container)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it.skipIf(process.platform === "win32")(
     "copies a read-only directory through writable staging and restores its mode",
     async () => {
@@ -372,6 +482,7 @@ describe("node item executor", () => {
     await mkdir(source, { recursive: true });
     await writeFile(join(source, "SKILL.md"), "before-copy");
     const item = moveItem(source, destination);
+    const sourceQuarantine = operationArtifactPaths(item, "source-quarantine");
     const executor = createNodeItemExecutor({
       async rename(from, to) {
         if (from === source && to === destination) {
@@ -380,7 +491,10 @@ describe("node item executor", () => {
         await rename(from, to);
       },
       async beforeFinalPlacement() {
-        await writeFile(join(source, "SKILL.md"), "after-copy");
+        await writeFile(
+          join(sourceQuarantine.payload, "SKILL.md"),
+          "after-copy",
+        );
       },
     });
 
@@ -592,7 +706,11 @@ describe("node item executor", () => {
         }
         await rename(from, to);
       },
-      async writeMarker(path) {
+      async writeMarker(path, content) {
+        if (path !== temporary.marker) {
+          await writeFile(path, content, { encoding: "utf8", flag: "wx" });
+          return;
+        }
         await mkdir(join(dirname(path), "foreign"), { recursive: true });
         await writeFile(join(dirname(path), "foreign", "occupant.md"), "keep");
         throw primary;
@@ -782,8 +900,13 @@ describe("node item executor", () => {
       source,
       process.platform === "win32" ? "dir" : undefined,
     );
+    let requestedType: "dir" | "file" | "junction" | undefined;
     const executor = createNodeItemExecutor({
       platform: "win32",
+      async createSymlink(targetText, path, type) {
+        requestedType = type;
+        await symlink(targetText, path, type);
+      },
       async rename(from, to) {
         if (from === source) {
           throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
@@ -799,9 +922,45 @@ describe("node item executor", () => {
 
     expect((await lstat(destination)).isSymbolicLink()).toBe(true);
     expect(await readlink(destination)).toBe("../external");
+    expect(requestedType).toBe("dir");
     await expect(
       readFile(join(destination, "outside.md"), "utf8"),
     ).resolves.toBe("outside");
+  });
+
+  it("classifies an internal relative Windows link from its pre-isolation location", async () => {
+    const home = await makeTempHome();
+    const source = join(home, "active", "pdf");
+    const destination = join(home, "parked", "pdf");
+    await mkdir(join(source, "target"), { recursive: true });
+    await writeFile(join(source, "target", "inside.md"), "inside");
+    await symlink(
+      "target",
+      join(source, "nested-link"),
+      process.platform === "win32" ? "dir" : undefined,
+    );
+    let requestedType: "dir" | "file" | "junction" | undefined;
+    const executor = createNodeItemExecutor({
+      platform: "win32",
+      async createSymlink(targetText, path, type) {
+        requestedType = type;
+        await symlink(targetText, path, type);
+      },
+      async rename(from, to) {
+        if (from === source && to === destination) {
+          throw Object.assign(new Error("cross-device"), { code: "EXDEV" });
+        }
+        await rename(from, to);
+      },
+    });
+
+    await executor.apply(moveItem(source, destination));
+
+    expect(requestedType).toBe("dir");
+    expect(await readlink(join(destination, "nested-link"))).toBe("target");
+    await expect(
+      readFile(join(destination, "nested-link", "inside.md"), "utf8"),
+    ).resolves.toBe("inside");
   });
 
   it.each([
