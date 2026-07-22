@@ -13,7 +13,7 @@ export async function createSkill(
   frontmatter: {
     name: string;
     description: string;
-    routing?: { aliases: string[] };
+    search?: { keywords: string[] };
   } = {
     name: entryName,
     description: `${entryName} skill`,

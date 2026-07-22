@@ -22,12 +22,12 @@ export async function readSkillMetadata(
     const data = parse(match[1]) as {
       name?: unknown;
       description?: unknown;
-      routing?: unknown;
+      search?: unknown;
     };
     const name = typeof data.name === "string" ? data.name.trim() : "";
     const description =
       typeof data.description === "string" ? data.description.trim() : "";
-    const routing = readRoutingMetadata(data.routing);
+    const search = readSearchMetadata(data.search);
     const warnings = [
       !name && "Missing name",
       !description && "Missing description",
@@ -35,7 +35,7 @@ export async function readSkillMetadata(
     return {
       name: name || fallback,
       description,
-      ...(routing === undefined ? {} : { routing }),
+      ...(search === undefined ? {} : { search }),
       valid: warnings.length === 0,
       warnings,
     };
@@ -52,21 +52,21 @@ export async function readSkillMetadata(
   }
 }
 
-function readRoutingMetadata(
+function readSearchMetadata(
   value: unknown,
-): SkillMetadata["routing"] | undefined {
+): SkillMetadata["search"] | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
   }
-  const aliases = (value as { aliases?: unknown }).aliases;
-  if (!Array.isArray(aliases)) return undefined;
+  const keywords = (value as { keywords?: unknown }).keywords;
+  if (!Array.isArray(keywords)) return undefined;
   const normalized = [
     ...new Set(
-      aliases
-        .filter((alias): alias is string => typeof alias === "string")
-        .map((alias) => alias.trim())
-        .filter((alias) => alias.length > 0 && alias.length <= 160),
+      keywords
+        .filter((keyword): keyword is string => typeof keyword === "string")
+        .map((keyword) => keyword.trim())
+        .filter((keyword) => keyword.length > 0 && keyword.length <= 160),
     ),
   ].slice(0, 32);
-  return normalized.length === 0 ? undefined : { aliases: normalized };
+  return normalized.length === 0 ? undefined : { keywords: normalized };
 }

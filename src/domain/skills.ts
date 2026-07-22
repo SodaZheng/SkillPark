@@ -4,8 +4,8 @@ export type ScanMode = "active" | "parked";
 export interface SkillMetadata {
   name: string;
   description: string;
-  routing?: {
-    aliases: string[];
+  search?: {
+    keywords: string[];
   };
   valid: boolean;
   warnings: string[];

@@ -1,5 +1,5 @@
 import type { AgentId } from "../domain/agents.js";
-import type { SkillRouteResult } from "../skills/router.js";
+import type { SkillSearchResult } from "../skills/search.js";
 import {
   GATEWAY_HOOK_MAX_DESCRIPTION_BYTES,
   gatewayHookCommand,
@@ -23,23 +23,19 @@ export function mergeGatewayHookConfiguration(
 ): HookMergeResult {
   const adapter = getGatewayHookAdapter(agent);
   if (adapter === undefined) {
-    throw new Error(
-      `Agent does not support a SkillPark routing hook: ${agent}`,
-    );
+    throw new Error(`Agent does not support a SkillPark search hook: ${agent}`);
   }
   return adapter.merge(configuration, agent);
 }
 
 export function renderGatewayHookOutput(
   agent: AgentId,
-  routing: SkillRouteResult,
+  search: SkillSearchResult,
   input?: string,
 ): string {
   const adapter = getGatewayHookAdapter(agent);
   if (adapter === undefined) {
-    throw new Error(
-      `Agent does not support a SkillPark routing hook: ${agent}`,
-    );
+    throw new Error(`Agent does not support a SkillPark search hook: ${agent}`);
   }
-  return adapter.render(agent, routing, input);
+  return adapter.render(agent, search, input);
 }

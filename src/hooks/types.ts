@@ -1,5 +1,5 @@
 import type { AgentId, AgentScope, HookAdapterId } from "../domain/agents.js";
-import type { SkillRouteResult } from "../skills/router.js";
+import type { SkillSearchResult } from "../skills/search.js";
 
 export interface HookMergeResult {
   changed: boolean;
@@ -22,7 +22,7 @@ export interface GatewayHookAdapter {
     configuration: Record<string, unknown>,
     agent: AgentId,
   ): HookMergeResult;
-  render(agent: AgentId, routing: SkillRouteResult, input?: string): string;
+  render(agent: AgentId, search: SkillSearchResult, input?: string): string;
   warning?(scope: AgentScope): string | undefined;
 }
 

@@ -9,7 +9,7 @@ export const geminiHookAdapter = createGroupedJsonHookAdapter({
   handler: (agent) => ({
     type: "command",
     command: gatewayHookCommand(agent),
-    name: "skillpark-router",
+    name: "skillpark-search",
     description: "Inject parked SkillPark metadata before each agent turn",
     timeout: 30_000,
   }),

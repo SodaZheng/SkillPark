@@ -167,7 +167,7 @@ describe("built CLI", () => {
         "--version",
       ]);
 
-      expect(stdout).toBe("0.1.0\n");
+      expect(stdout).toBe("0.1.1\n");
       expect(stderr).toBe("");
     },
   );
@@ -178,7 +178,7 @@ describe("built CLI", () => {
     expect(root).toMatchObject({ code: 0, stderr: "" });
     expect(root.stdout).toContain("Park and load agent skills on demand");
     expect(root.stdout).toContain("Examples:");
-    expect(version).toMatchObject({ code: 0, stdout: "0.1.0\n", stderr: "" });
+    expect(version).toMatchObject({ code: 0, stdout: "0.1.1\n", stderr: "" });
   });
 
   it("maps unknown commands and agents to exit code 2", async () => {
@@ -208,7 +208,7 @@ describe("built CLI", () => {
       "Installed SkillPark gateway skill for codex (global)",
     );
     expect(result.stdout).toContain(
-      "Installed SkillPark routing hook for codex (global)",
+      "Installed SkillPark search hook for codex (global)",
     );
     await expect(
       readFile(

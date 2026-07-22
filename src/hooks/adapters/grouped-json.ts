@@ -75,8 +75,8 @@ export function createGroupedJsonHookAdapter(options: {
         },
       };
     },
-    render: (agent, routing) =>
-      renderAdditionalContextOutput(options.event, agent, routing),
+    render: (agent, search) =>
+      renderAdditionalContextOutput(options.event, agent, search),
     ...(options.warning === undefined ? {} : { warning: options.warning }),
   };
 }

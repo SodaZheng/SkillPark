@@ -55,6 +55,8 @@
     "@clack/core": "^1.4.3",
     "@clack/prompts": "^1.7.0",
     "commander": "^14.0.3",
+    "minisearch": "7.2.0",
+    "stemmer": "2.0.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

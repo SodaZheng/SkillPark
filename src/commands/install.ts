@@ -389,11 +389,11 @@ export async function runInstall(
         hookPlan,
       );
       context.output.success(
-        `Installed SkillPark routing hook for ${agent} (${scope}): ${hookPlan.path}`,
+        `Installed SkillPark search hook for ${agent} (${scope}): ${hookPlan.path}`,
       );
     } else {
       context.output.info(
-        `SkillPark routing hook is already installed for ${agent} (${scope}): ${hookPlan.path}`,
+        `SkillPark search hook is already installed for ${agent} (${scope}): ${hookPlan.path}`,
       );
     }
     const warning = hookAdapter?.warning?.(scope);

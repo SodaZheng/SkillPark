@@ -1035,7 +1035,7 @@ describe("store and restore", () => {
       "agents",
       "install",
       "get",
-      "route",
+      "search",
       "hook",
     ]);
   });

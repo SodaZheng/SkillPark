@@ -1318,7 +1318,7 @@ describe("runAdd", () => {
       "agents",
       "install",
       "get",
-      "route",
+      "search",
       "hook",
     ]);
   });

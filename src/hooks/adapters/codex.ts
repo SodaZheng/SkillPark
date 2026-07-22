@@ -7,7 +7,7 @@ export const codexHookAdapter = createGroupedJsonHookAdapter({
   globalConfig: ".codex/hooks.json",
   projectConfig: ".codex/hooks.json",
   initialConfiguration: {
-    description: "SkillPark read-only parked-skill routing",
+    description: "SkillPark read-only parked-skill search",
   },
   handler: (agent) => ({
     type: "command",

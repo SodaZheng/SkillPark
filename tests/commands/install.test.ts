@@ -176,7 +176,7 @@ describe("install command", () => {
   );
 
   it.each(agents)(
-    "installs the gateway skill and routing hook globally for $agent by default",
+    "installs the gateway skill and search hook globally for $agent by default",
     async ({ agent, configRoot, hookFile }) => {
       const home = await makeTempHome();
       const current = await makeTempHome();
@@ -218,7 +218,7 @@ describe("install command", () => {
         `Installed SkillPark gateway skill for ${agent} (global): ${destination}`,
       );
       expect(messages).toContain(
-        `Installed SkillPark routing hook for ${agent} (global): ${hookPath}`,
+        `Installed SkillPark search hook for ${agent} (global): ${hookPath}`,
       );
     },
   );
@@ -286,7 +286,7 @@ describe("install command", () => {
       access(join(home, ".cursor/skills/skillpark/SKILL.md")),
     ).resolves.toBeUndefined();
     expect(messages).not.toContainEqual(
-      expect.stringContaining("routing hook protocol"),
+      expect.stringContaining("search hook protocol"),
     );
   });
 

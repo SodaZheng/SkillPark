@@ -9,7 +9,7 @@ export const qwenHookAdapter = createGroupedJsonHookAdapter({
   handler: (agent) => ({
     type: "command",
     command: gatewayHookCommand(agent),
-    name: "skillpark-router",
+    name: "skillpark-search",
     description: "Inject parked SkillPark metadata before each prompt",
     timeout: 30_000,
     statusMessage: "Checking parked skills",

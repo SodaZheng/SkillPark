@@ -6,51 +6,52 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-[![Version](https://img.shields.io/badge/version-0.1.0-2563EB.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-0.1.1-2563EB.svg)](package.json)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-339933.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22C55E.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6.svg)](https://www.typescriptlang.org/)
 
 </div>
 
-![SkillPark routes a small set of parked skills into an AI agent](docs/assets/skillpark-hero.png)
+![SkillPark searches a small set of parked skills for an AI agent](docs/assets/skillpark-hero.png)
 
 SkillPark is a local, open-source CLI for managing skills across AI coding agents. It moves
-rarely needed skills outside each agent's normal discovery path, routes every request against
-parked skill metadata, and loads only the small set that genuinely matches the task.
+rarely needed skills outside each agent's normal discovery path, searches parked metadata for every
+request, and lets the host model load only the small set that genuinely matches the task.
 
-The result is a simple separation of concerns: **store many skills, expose a tiny router, and load
-instructions only when they are needed.**
+The result is a simple separation of concerns: **store many skills, expose a tiny search gateway,
+and load instructions only when they are needed.**
 
 ## Why SkillPark?
 
 AI agents normally discover skills by scanning one or more active skill directories. That works
 well with a small catalog. As the catalog grows, however, every always-visible skill description
-competes for context and routing attention—even when most skills are irrelevant to the current
+competes for context and selection attention—even when most skills are irrelevant to the current
 request.
 
 SkillPark is built around three goals:
 
 1. **Reduce always-visible skill context.** Park inactive skills outside native discovery paths.
-2. **Preserve on-demand access.** Route requests locally and reveal only a confidence-gated
-   candidate set.
+2. **Preserve on-demand access.** Search metadata locally, then let the host model validate a
+   bounded hit set and refine the keywords once when needed.
 3. **Keep control with the user.** Use transparent filesystem operations, interactive selection,
    conflict checks, and recoverable transactions.
 
 | Without SkillPark | With SkillPark |
 | --- | --- |
 | Every active skill can be discovered on every turn | Only the SkillPark gateway stays visible |
-| The full catalog may compete for selection | The local router returns at most 3 candidates by default |
+| The full catalog may compete for selection | Local search returns at most 5 hits by default |
 | Skills must be manually removed and re-added | Skills can be parked, restored, added, and inspected from one CLI |
 | Host-specific hook configuration is manual | Native adapters merge read-only hooks for supported agents |
 
 ## Main features
 
 - **On-demand loading** — parked skills remain out of the agent's native scan until selected.
-- **Deterministic local routing** — Unicode-aware matching for Chinese and English, exact
-  invocation, aliases, word-form normalization, rarity weighting, and conservative typo matching.
-- **Bounded context** — the full catalog is omitted; routing returns a small, confidence-gated set
-  with a default maximum of 3 candidates.
+- **Model-guided local search** — the host model supplies concise capability keywords and can add
+  Chinese-English equivalents; local BM25 handles Unicode, CJK bigrams, English stemming, prefixes,
+  and conservative typo matching without a model weight.
+- **Bounded context** — the full catalog is omitted; search returns at most 5 metadata hits by
+  default, and the host model still applies native skill-trigger rules.
 - **73 agent targets** — paths and detection rules cover a broad set of coding agents and skill
   hosts.
 - **Native prompt hooks** — adapters for Claude Code, Codex, Gemini CLI, Qwen Code, and GitHub
@@ -64,19 +65,18 @@ SkillPark is built around three goals:
 
 ## How it works
 
-![SkillPark local routing and loading flow](docs/assets/skillpark-routing-flow.png)
-
 1. Skills are stored under `~/.skillpark/skills/<agent>/`, outside that agent's active discovery
    directory.
-2. A native prompt hook—or the installed gateway skill when no native adapter exists—passes the
-   request to the local router.
-3. The router reads only parked skill metadata and returns the best confidence-gated matches. The
-   normal hook path uses the precision-oriented default limit of 3.
-4. The gateway applies the host agent's normal skill-trigger rules to those candidates and loads an
-   exact match with `skillpark get <agent> <entryName>`.
-5. The selected `SKILL.md` is used for the current task. The skill itself remains parked.
+2. A native prompt hook performs the first local lexical search. Without a native adapter, the
+   installed gateway asks the host model to generate a concise keyword query.
+3. Local field-weighted BM25 returns at most 5 metadata hits. It retrieves candidates but does not
+   claim that a skill applies.
+4. The host model applies native skill-trigger rules. If no hit truly applies, it may run one
+   refined search with capability synonyms and compact Chinese-English equivalents.
+5. The gateway loads an exact match with `skillpark get <agent> <entryName>`. The selected
+   `SKILL.md` is used for the current task while the skill remains parked.
 
-No remote routing service or catalog database is involved. Git is used only when you explicitly
+No remote search service, embedding model, or catalog database is involved. Git is used only when you explicitly
 add a Git source.
 
 ## Requirements
@@ -174,11 +174,11 @@ skill and, when the selected agent has a native adapter, merges the correspondin
 
 ### 4. Keep asking normally
 
-With a hook installed, ordinary prompts are routed automatically. You can also inspect the route:
+With a hook installed, ordinary prompts are searched automatically. You can also inspect search hits:
 
 ```bash
-skillpark route codex "create an Excel workbook"
-skillpark route codex --limit 1 "write a contract"
+skillpark search codex "spreadsheet Excel XLSX workbook 电子表格 工作簿"
+skillpark search codex --limit 1 "contract Word DOCX 合同 文档"
 ```
 
 Or invoke a parked skill explicitly:
@@ -207,8 +207,8 @@ loading the exact parked entry.
 | `skillpark list [agent] -q <query>` | Filter the visible inventory |
 | `skillpark install [agent]` | Install the gateway skill and a supported native hook |
 | `skillpark install [agent] --force` | Atomically replace only a conflicting gateway skill; hook settings are still merged |
-| `skillpark route <agent> "<query>"` | Inspect the bounded local routing result without loading a skill |
-| `skillpark route <agent> --limit <1-10> "<query>"` | Override the maximum number of diagnostic candidates |
+| `skillpark search <agent> "<keywords>"` | Search parked metadata without loading a skill |
+| `skillpark search <agent> --limit <1-10> "<keywords>"` | Override the maximum number of bounded search hits |
 | `skillpark get [agent] <skill>` | Print one parked skill's root, instruction path, and complete `SKILL.md` |
 
 When an agent argument is omitted from an interactive command, SkillPark asks you to choose one.
@@ -298,31 +298,31 @@ Representative gateway paths are shown below. Parked skills remain under
 There is no `--current` flag. Installation scope is intentionally selected in the interactive
 prompt. `--force` applies only to the gateway skill directory, never to unrelated hook settings.
 
-## Routing behavior
+## Search behavior
 
-The router is deterministic, offline, and designed for precision. It combines:
+Local search is deterministic and offline. Field-weighted BM25 searches skill names, optional
+keywords, and positive description clauses. Unicode word segmentation, CJK bigrams, English
+stemming, prefix matching, and conservative typo matching provide lightweight lexical recall. It
+does not use a hand-maintained capability ontology and does not download an embedding model.
 
-- explicit entry-name invocation;
-- Unicode-aware tokenization;
-- skill name and description weighting;
-- common Chinese and English capability concepts;
-- English word-form normalization;
-- per-catalog rarity;
-- conservative typo similarity;
-- confidence thresholds and distance from the top score.
+The host model supplies the semantic layer. It turns the request into 3-8 capability terms,
+preserves formats and product names, and adds compact Chinese-English equivalents when language may
+hide the match. Hook output counts as the first pass; the model may refine the query once, so no
+request performs more than two bounded searches. Search scores describe retrieval relevance only.
+The model applies native skill-trigger rules before loading a hit.
 
-A no-match hook returns only a short marker and never emits the catalog. Candidate metadata is
-treated as untrusted, and the gateway still applies the host agent's native skill-trigger rules
-before loading anything.
+Exact `$name` and `/name` invocations sort first. Terms found only under `Do not use`, `Not for`,
+and equivalent Chinese exclusion clauses are not indexed. A no-hit hook returns only a short marker
+and never emits the catalog. Hit metadata is always treated as untrusted.
 
-Skill authors can add routing-only aliases without changing the displayed description:
+Skill authors can add optional search keywords without changing the displayed description:
 
 ```yaml
 ---
 name: documents
 description: Create and edit Word documents.
-routing:
-  aliases:
+search:
+  keywords:
     - 写合同
     - contract drafting
 ---
@@ -330,8 +330,8 @@ routing:
 
 ## Safety and privacy
 
-- **Local by design:** inventory scanning and routing happen on the local machine.
-- **Read-only hook boundary:** installed hooks route metadata and print loading instructions; they
+- **Local by design:** inventory scanning and lexical search happen on the local machine.
+- **Read-only hook boundary:** installed hooks search metadata and print loading instructions; they
   never run `store`, `restore`, `add`, or `install`.
 - **No silent overwrite:** active and parked name conflicts are disabled before a move or copy.
 - **Guarded paths:** source and destination boundaries, entry names, symlinks, and physical object

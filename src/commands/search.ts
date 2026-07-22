@@ -5,29 +5,29 @@ import { UsageError } from "../domain/errors.js";
 import { gatewayContext } from "../hooks/context.js";
 import { GATEWAY_SKILL_ENTRY_NAME } from "../skills/gateway.js";
 import {
-  DEFAULT_ROUTE_LIMIT,
-  routableSkillFromEntry,
-  routeSkills,
-  type SkillRouteResult,
-} from "../skills/router.js";
+  DEFAULT_SEARCH_LIMIT,
+  searchableSkillFromEntry,
+  searchSkills,
+  type SkillSearchResult,
+} from "../skills/search.js";
 import { scanSkillEntries } from "../skills/scan.js";
 import type { CommandContext } from "./context.js";
 
-interface RouteOptions {
+interface SearchOptions {
   limit?: string;
 }
 
-export interface AgentSkillRouteResult extends SkillRouteResult {
+export interface AgentSkillSearchResult extends SkillSearchResult {
   agent: AgentId;
 }
 
-export async function routeParkedSkills(
+export async function searchParkedSkills(
   agent: AgentId,
-  prompt: string,
+  query: string,
   homeDir: string,
   cwd: string = process.cwd(),
-  limit: number = DEFAULT_ROUTE_LIMIT,
-): Promise<AgentSkillRouteResult> {
+  limit: number = DEFAULT_SEARCH_LIMIT,
+): Promise<AgentSkillSearchResult> {
   const entries = await scanSkillEntries(
     getAgentPaths(agent, homeDir, cwd).parked,
     "parked",
@@ -39,38 +39,38 @@ export async function routeParkedSkills(
         entry.metadata.valid &&
         !entry.broken,
     )
-    .map(routableSkillFromEntry);
-  return { agent, ...routeSkills(prompt, catalog, { limit }) };
+    .map(searchableSkillFromEntry);
+  return { agent, ...searchSkills(query, catalog, { limit }) };
 }
 
 function parseLimit(value: string | undefined): number {
-  if (value === undefined) return DEFAULT_ROUTE_LIMIT;
+  if (value === undefined) return DEFAULT_SEARCH_LIMIT;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) {
-    throw new UsageError("Route limit must be an integer from 1 to 10");
+    throw new UsageError("Search limit must be an integer from 1 to 10");
   }
   return parsed;
 }
 
-export function registerRouteCommand(
+export function registerSearchCommand(
   program: Command,
   context: CommandContext,
 ): void {
   program
-    .command("route <agent> <query...>")
-    .description("Route a request to a small parked-skill candidate set")
-    .option("--limit <count>", "Maximum candidates (1-10)")
+    .command("search <agent> <query...>")
+    .description("Search parked-skill metadata for a bounded candidate set")
+    .option("--limit <count>", "Maximum hits (1-10)")
     .action(
       async (
         agentArgument: string,
         queryParts: string[],
-        options: RouteOptions,
+        options: SearchOptions,
       ) => {
-        const prompt = queryParts.join(" ").trim();
-        if (!prompt) throw new UsageError("Routing query cannot be empty");
-        const result = await routeParkedSkills(
+        const query = queryParts.join(" ").trim();
+        if (!query) throw new UsageError("Search query cannot be empty");
+        const result = await searchParkedSkills(
           parseAgentId(agentArgument),
-          prompt,
+          query,
           context.homeDir,
           context.cwd,
           parseLimit(options.limit),

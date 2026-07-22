@@ -17,16 +17,16 @@ describe("readSkillMetadata", () => {
     });
   });
 
-  it("reads and normalizes optional routing aliases", async () => {
+  it("reads and normalizes optional search keywords", async () => {
     const home = await makeTempHome();
     const path = await createSkill(home, "documents", {
       name: "documents",
       description: "Create Word documents",
-      routing: { aliases: [" 写合同 ", "contract drafting", "写合同"] },
+      search: { keywords: [" 写合同 ", "contract drafting", "写合同"] },
     });
 
     await expect(readSkillMetadata(path)).resolves.toMatchObject({
-      routing: { aliases: ["写合同", "contract drafting"] },
+      search: { keywords: ["写合同", "contract drafting"] },
       valid: true,
     });
   });

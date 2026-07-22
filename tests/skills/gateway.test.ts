@@ -6,14 +6,13 @@ import { bundledGatewaySkillRoot } from "../../src/skills/gateway.js";
 import { readSkillMetadata } from "../../src/skills/metadata.js";
 
 describe("bundled SkillPark gateway", () => {
-  it("advertises an unconditional local routing pass for every request", async () => {
+  it("advertises an unconditional bounded search for every request", async () => {
     const metadata = await readSkillMetadata(bundledGatewaySkillRoot());
 
     expect(metadata.valid).toBe(true);
     expect(metadata.description).toContain("Invoke before every user request");
-    expect(metadata.description).toContain(
-      "small locally routed candidate set",
-    );
+    expect(metadata.description).toContain("bounded local search");
+    expect(metadata.description).toContain("host-model keyword expansion");
     expect(metadata.description).toContain(
       "instead of listing every parked skill",
     );
@@ -21,30 +20,31 @@ describe("bundled SkillPark gateway", () => {
     expect(metadata.description).not.toContain("skillpark get");
   });
 
-  it("defines bounded local routing and mutation boundaries", async () => {
+  it("defines model-expanded search, trigger validation, and mutation boundaries", async () => {
     const instructions = await readFile(
       join(bundledGatewaySkillRoot(), "SKILL.md"),
       "utf8",
     );
 
-    expect(instructions).toContain("## Route every request locally");
+    expect(instructions).toContain("## Search before every request");
     expect(instructions).toContain("Before responding to every user request");
     expect(instructions).toContain(
-      'skillpark route <agent> "<current user request>"',
+      'skillpark search <agent> "<capability keywords>"',
     );
-    expect(instructions).toMatch(/Do not run a\s+second\s+routing/u);
+    expect(instructions).toContain("never exceed two search");
+    expect(instructions).toContain("Count hook-provided results as one pass");
     expect(instructions).toContain("Never use `skillpark list` for automatic");
     expect(instructions).toMatch(
-      /full\s+parked catalog must not enter model context/u,
+      /full parked\s+catalog must not\s+enter model context/u,
     );
-    expect(instructions).toContain(
-      "Apply the host agent's normal skill-trigger",
-    );
-    expect(instructions).toContain("Scores are recall hints");
-    expect(instructions).toContain("For each selected candidate");
+    expect(instructions).toContain("normal skill-trigger rules");
+    expect(instructions).toContain("retrieval relevance only");
+    expect(instructions).toContain("Chinese-English language boundary");
+    expect(instructions).toContain("For each selected hit");
     expect(instructions).toContain(
       "Never execute `skillpark store`, `skillpark restore`, `skillpark add`, or",
     );
+    expect(instructions).not.toContain("skillpark route");
   });
 
   it("explicitly enables implicit invocation in Codex metadata", async () => {
@@ -65,10 +65,10 @@ describe("bundled SkillPark gateway", () => {
     expect(configuration.policy?.allow_implicit_invocation).toBe(true);
     expect(configuration.interface?.display_name).toBe("SkillPark");
     expect(configuration.interface?.short_description).toContain(
-      "small parked-skill candidate set",
+      "bounded parked-skill candidate set",
     );
     expect(configuration.interface?.default_prompt).toBe(
-      "Use $skillpark to consume the local router result for this request and load only true matches.",
+      "Use $skillpark to search parked skills with concise bilingual capability keywords and load only true trigger matches.",
     );
   });
 });

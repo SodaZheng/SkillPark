@@ -9,7 +9,7 @@ import {
 import { CANCELLED } from "../tui/ports.js";
 import { selectAgent } from "./agent-selection.js";
 import type { CommandContext } from "./context.js";
-import { routeParkedSkills } from "./route.js";
+import { searchParkedSkills } from "./search.js";
 
 export async function runHook(
   agentArgument: string,
@@ -18,17 +18,17 @@ export async function runHook(
   const agent = parseAgentId(agentArgument);
   const adapter = getGatewayHookAdapter(agent);
   if (adapter === undefined) {
-    throw new UsageError(`Routing hooks are not supported for agent: ${agent}`);
+    throw new UsageError(`Search hooks are not supported for agent: ${agent}`);
   }
   const input = await context.input.read();
   const prompt = extractHookPrompt(input);
-  const routing = await routeParkedSkills(
+  const search = await searchParkedSkills(
     agent,
     prompt,
     context.homeDir,
     context.cwd,
   );
-  context.output.write(renderGatewayHookOutput(agent, routing, input));
+  context.output.write(renderGatewayHookOutput(agent, search, input));
 }
 
 export function extractHookPrompt(input: string): string {
@@ -50,7 +50,7 @@ export function registerHookCommand(
 ): void {
   program
     .command("hook [agent]", { hidden: true })
-    .description("Emit parked-skill routing context for an agent hook")
+    .description("Emit parked-skill search context for an agent hook")
     .action(async (agentArgument: string | undefined) => {
       const agent = await selectAgent(agentArgument, context, {
         message: "Select an agent hook to preview",

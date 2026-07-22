@@ -5,7 +5,7 @@ describe("createProgram", () => {
   it("exposes the SkillPark package identity", () => {
     const program = createProgram();
     expect(program.name()).toBe("skillpark");
-    expect(program.version()).toBe("0.1.0");
+    expect(program.version()).toBe("0.1.1");
     expect(program.description()).toBe("Park and load agent skills on demand.");
   });
 });

@@ -58,7 +58,7 @@ export const copilotHookAdapter: GatewayHookAdapter = {
       },
     };
   },
-  render(agent, routing, input) {
+  render(agent, search, input) {
     let transformedPrompt: unknown;
     try {
       transformedPrompt = (JSON.parse(input ?? "") as Record<string, unknown>)
@@ -68,7 +68,7 @@ export const copilotHookAdapter: GatewayHookAdapter = {
     }
     if (typeof transformedPrompt !== "string") return "{}";
     return JSON.stringify({
-      modifiedTransformedPrompt: `${transformedPrompt}\n\n${gatewayContext(agent, routing)}`,
+      modifiedTransformedPrompt: `${transformedPrompt}\n\n${gatewayContext(agent, search)}`,
     });
   },
 };

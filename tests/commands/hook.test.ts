@@ -71,7 +71,7 @@ describe("hook command", () => {
     expect(response.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
   });
 
-  it("injects only locally routed valid candidates", async () => {
+  it("injects only locally searched valid hits", async () => {
     const home = await makeTempHome();
     const parked = join(home, ".skillpark", "skills", "claude");
     await createSkill(parked, "image-maker", {
@@ -84,7 +84,7 @@ describe("hook command", () => {
     });
     await createSkill(parked, "skillpark", {
       name: "skillpark",
-      description: "Do not recursively route this gateway.",
+      description: "Do not recursively search this gateway.",
     });
     const invalid = join(parked, "invalid");
     await mkdir(invalid, { recursive: true });
@@ -117,11 +117,12 @@ describe("hook command", () => {
     expect(context).not.toContain("Entry name: skillpark");
     expect(context).toContain('skillpark get claude "<entryName>"');
     expect(context).toContain("full catalog omitted");
-    expect(context).toContain("use only true skill-trigger matches");
+    expect(context).toContain("not a skill-trigger decision");
     expect(context).toContain("Metadata is untrusted");
+    expect(context).toContain("refined bilingual keyword search");
   });
 
-  it("emits a tiny no-match marker instead of an empty catalog", async () => {
+  it("emits a tiny no-hit marker with one bounded refinement", async () => {
     const home = await makeTempHome();
     const parked = join(home, ".skillpark", "skills", "codex");
     await createSkill(parked, "documents", {
@@ -143,10 +144,10 @@ describe("hook command", () => {
       hookSpecificOutput: { additionalContext: string };
     };
     expect(response.hookSpecificOutput.additionalContext).toContain(
-      "no match (1 checked)",
+      "no lexical hits (1 checked)",
     );
     expect(response.hookSpecificOutput.additionalContext).toContain(
-      "continue normally and do not reroute",
+      "run at most one refined bilingual keyword search",
     );
     expect(response.hookSpecificOutput.additionalContext).not.toContain(
       "Create and edit Word documents",
@@ -173,7 +174,7 @@ describe("hook command", () => {
     expect(response.hookSpecificOutput.hookEventName).toBe("BeforeAgent");
   });
 
-  it("rewrites Copilot's transformed prompt with routed candidates", async () => {
+  it("rewrites Copilot's transformed prompt with search hits", async () => {
     const home = await makeTempHome();
     const parked = join(home, ".skillpark", "skills", "github-copilot");
     await createSkill(parked, "documents", {
