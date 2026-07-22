@@ -12,10 +12,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import pkg from "../../package.json" with { type: "json" };
 
 const exec = promisify(execFile);
 const homes: string[] = [];
 const cliPath = join(process.cwd(), "dist", "cli.js");
+const expectedVersion = `${pkg.version}\n`;
 
 async function run(
   args: string[],
@@ -167,7 +169,7 @@ describe("built CLI", () => {
         "--version",
       ]);
 
-      expect(stdout).toBe("0.1.1\n");
+      expect(stdout).toBe(expectedVersion);
       expect(stderr).toBe("");
     },
   );
@@ -178,7 +180,11 @@ describe("built CLI", () => {
     expect(root).toMatchObject({ code: 0, stderr: "" });
     expect(root.stdout).toContain("Park and load agent skills on demand");
     expect(root.stdout).toContain("Examples:");
-    expect(version).toMatchObject({ code: 0, stdout: "0.1.1\n", stderr: "" });
+    expect(version).toMatchObject({
+      code: 0,
+      stdout: expectedVersion,
+      stderr: "",
+    });
   });
 
   it("maps unknown commands and invalid agent ids to exit code 2", async () => {

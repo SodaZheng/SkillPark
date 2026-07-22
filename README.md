@@ -6,7 +6,7 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-[![Version](https://img.shields.io/badge/version-0.1.1-2563EB.svg)](package.json)
+[![npm version](https://img.shields.io/npm/v/skillpark?color=2563EB)](https://www.npmjs.com/package/skillpark)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-339933.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22C55E.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6.svg)](https://www.typescriptlang.org/)
