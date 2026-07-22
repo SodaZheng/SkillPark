@@ -48,7 +48,8 @@ SkillPark 围绕三个目标设计：
   Unicode 分词、CJK 双字组、英文词干、前缀和保守拼写纠错，不需要模型权重。
 - **有界上下文** — 不把完整目录交给 Agent；搜索默认最多返回 5 条元数据，最终仍由宿主模型
   应用原生 Skill 触发规则。
-- **73 个 Agent 目标** — 覆盖广泛的 AI 编程 Agent，并定义对应的技能路径与检测规则。
+- **73 个内置目标 + 自定义 Agent** — 既可使用内置路径，也可显式传入新 id 使用约定式
+  Skill 与 Hook 路径。
 - **原生 Prompt Hook** — 内置 Claude Code、Codex、Gemini CLI、Qwen Code 和 GitHub
   Copilot 适配器。
 - **完整技能生命周期** — 支持从本地或 Git 来源新增技能、停放、恢复、查看目录以及精确加载
@@ -76,6 +77,29 @@ SkillPark 围绕三个目标设计：
 - npm（用于全局安装）
 - 仅从 Git 仓库新增技能时需要 Git
 
+## 自定义 Agent
+
+显式传入一个未知 Agent id 时，SkillPark 会把它作为自定义 Agent。例如：
+
+```bash
+skillpark install sodagent
+skillpark store sodagent
+```
+
+id 只能由小写字母、数字和分隔它们的单个连字符组成；输入会统一转成小写。SkillPark 使用
+以下约定：
+
+| 资源 | 全局 | 当前项目 |
+| --- | --- | --- |
+| 活动 Skills | `~/.sodagent/skills/` | `./.sodagent/skills/` |
+| 网关 Skill | `~/.sodagent/skills/skillpark/` | `./.sodagent/skills/skillpark/` |
+| Hook 配置 | `~/.sodagent/settings.json` | `./.sodagent/settings.json` |
+| 停放 Skills | `~/.skillpark/skills/sodagent/` | 共用同一个全局仓库 |
+
+自定义 Agent 使用分组 JSON `UserPromptSubmit` Hook 协议。宿主必须支持该协议，并能发现
+`skills/*/SKILL.md`；否则文件仍会安装，但宿主不会消费它们。自定义 id 只支持显式传入，
+不会加入内置 Agent 的交互选择器。`list`、`restore`、`search` 和 `get` 同样接受该 id。
+
 ## 自定义 Agent 配置目录
 
 SkillPark 会读取 Agent 自己的配置目录环境变量，因此自定义的全局技能目录和 Hook 配置不会
@@ -96,6 +120,9 @@ export SKILLPARK_CLAUDE_CONFIG_DIR=~/home/soda/.claude
 export SKILLPARK_GITHUB_COPILOT_CONFIG_DIR=/mnt/agent-config/copilot
 skillpark agents
 ```
+
+显式自定义 id 也支持同样的覆盖方式，例如
+`SKILLPARK_SODAGENT_CONFIG_DIR=/mnt/agent-config/sodagent skillpark install sodagent`。
 
 统一覆盖变量直接指向该 Agent 的配置根目录。SkillPark 会保留目标原有的技能子目录布局；
 例如 AstrBot 仍使用 `<config>/data/skills`。对于默认位于 `~/.config` 下的目标，SkillPark
@@ -183,20 +210,21 @@ $skillpark documents create a contract draft
 
 | 命令 | 用途 |
 | --- | --- |
-| `skillpark agents` | 列出所有支持的 Agent、检测状态、路径和 Hook 支持情况 |
+| `skillpark agents` | 列出内置 Agent、检测状态、路径和 Hook 支持情况 |
 | `skillpark add <source>` | 在本地或 Git 来源中发现技能，并把选中的技能复制到选定 Agent 的停放目录 |
 | `skillpark store [agent]` | 把选中的活动技能移动到该 Agent 的停放目录 |
 | `skillpark restore [agent]` | 把选中的停放技能移回该 Agent 的活动目录 |
 | `skillpark list [agent]` | 列出活动与停放技能、名称冲突和元数据警告 |
 | `skillpark list [agent] --parked` | 只显示停放技能 |
 | `skillpark list [agent] -q <query>` | 过滤当前显示的目录 |
-| `skillpark install [agent]` | 安装网关技能，并在支持时安装原生 Hook |
+| `skillpark install [agent]` | 安装网关技能及对应的内置或自定义 Hook |
 | `skillpark install [agent] --force` | 只原子替换冲突的网关技能；Hook 设置仍然采用合并方式 |
 | `skillpark search <agent> "<keywords>"` | 不加载技能，仅搜索停放 Skill 元数据 |
 | `skillpark search <agent> --limit <1-10> "<keywords>"` | 修改有界搜索结果的最大数量 |
 | `skillpark get [agent] <skill>` | 输出一个停放技能的根目录、指令文件路径和完整 `SKILL.md` |
 
-交互命令省略 Agent 参数时，SkillPark 会要求你进行选择；脚本和自动化仍可显式传入 Agent id。
+交互命令省略 Agent 参数时，SkillPark 会要求你进行选择；脚本和自动化仍可显式传入 Agent id，
+自定义 Agent 必须显式传入。
 
 ## 支持的技能来源
 
@@ -220,8 +248,9 @@ SkillPark 会识别来源根目录中的技能，也会扫描 `skills/`、`.clau
 
 ## 支持的 Agent
 
-SkillPark 当前定义了 73 个 Agent 目标。`claude-code` 是 `claude` 的别名。Eve 和
-PromptScript 仅支持项目范围；其他目标使用各自 Agent 定义中声明的技能根目录。
+SkillPark 当前定义了 73 个内置 Agent 目标，并接受约定式自定义 id。`claude-code` 是
+`claude` 的别名。Eve 和 PromptScript 仅支持项目范围；其他内置目标使用各自 Agent 定义中
+声明的技能根目录。
 
 <details>
 <summary>展开全部 Agent id</summary>
@@ -248,9 +277,10 @@ zed zcode zencoder zenflow neovate pochi promptscript adal universal
 | Gemini CLI | `BeforeAgent` | `~/.gemini/settings.json` | `./.gemini/settings.json` |
 | Qwen Code | `UserPromptSubmit` | `~/.qwen/settings.json` | `./.qwen/settings.json` |
 | GitHub Copilot | `userPromptTransformed` | `~/.copilot/settings.json` | `./.github/copilot/settings.json` |
+| 自定义 `<agent>` | `UserPromptSubmit` | `~/.<agent>/settings.json` | `./.<agent>/settings.json` |
 
-对于其他 Agent，`install` 只安装网关技能并跳过 Hook 配置。SkillPark 不会把某一个宿主的
-Hook 格式当成其他宿主的兜底方案。
+对于没有适配器的内置 Agent，`install` 只安装网关技能并跳过 Hook 配置。显式传入自定义
+Agent 表示选择上述通用协议；SkillPark 不会把它作为内置目标的兜底格式。
 
 Hook 安装是幂等的：已有设置和无关 Hook 分组都会保留；无效 JSON 会被拒绝，而不是被
 覆盖。请确保全局安装的 `skillpark` 命令位于 Agent 进程的 `PATH` 中。Hook 会在运行时解析
@@ -275,6 +305,8 @@ Hook 安装是幂等的：已有设置和无关 Hook 分组都会保留；无效
 | Qwen Code | 当前项目 | `./.qwen/skills/skillpark/` |
 | GitHub Copilot | 全局 | `~/.copilot/skills/skillpark/` |
 | GitHub Copilot | 当前项目 | `./.agents/skills/skillpark/` |
+| 自定义 `<agent>` | 全局 | `~/.<agent>/skills/skillpark/` |
+| 自定义 `<agent>` | 当前项目 | `./.<agent>/skills/skillpark/` |
 
 SkillPark 没有 `--current` 参数，安装范围需要在交互界面中选择。`--force` 只作用于网关技能
 目录，不会覆盖其他 Hook 设置。

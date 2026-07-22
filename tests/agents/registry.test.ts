@@ -19,13 +19,14 @@ afterEach(async () =>
 );
 
 describe("agent registry", () => {
-  it("accepts every skills-compatible id and the claude-code alias", () => {
+  it("accepts built-in aliases and convention-based custom agent ids", () => {
     expect(parseAgentId("claude-code")).toBe("claude");
     expect(parseAgentId("codex")).toBe("codex");
     expect(parseAgentId("cursor")).toBe("cursor");
     expect(parseAgentId("GEMINI-CLI")).toBe("gemini-cli");
+    expect(parseAgentId("SodAgent")).toBe("sodagent");
     expect(listAgentDefinitions()).toHaveLength(73);
-    expect(() => parseAgentId("other")).toThrow("Unsupported agent: other");
+    expect(() => parseAgentId("../other")).toThrow("Invalid agent id");
   });
 
   it("resolves active and parked paths from the injected home", () => {
@@ -42,6 +43,13 @@ describe("agent registry", () => {
     expect(() =>
       getAgentSkillRoot("eve", "global", "/home/tester", "/repo"),
     ).toThrow("does not support global skill installation");
+    expect(getAgentPaths("sodagent", "/home/tester", "/repo")).toEqual({
+      active: join("/home/tester", ".sodagent", "skills"),
+      parked: join("/home/tester", ".skillpark", "skills", "sodagent"),
+    });
+    expect(
+      getAgentSkillRoot("sodagent", "current", "/home/tester", "/repo"),
+    ).toBe(join("/repo", ".sodagent", "skills"));
   });
 
   it("resolves native and SkillPark-specific custom config directories", () => {
@@ -53,6 +61,7 @@ describe("agent registry", () => {
       GEMINI_CLI_HOME: "/state/gemini-home",
       QWEN_HOME: "../qwen-profile",
       SKILLPARK_CLAUDE_CONFIG_DIR: "/skillpark/claude",
+      SKILLPARK_SODAGENT_CONFIG_DIR: "/skillpark/sodagent",
     });
 
     expect(configDirs).toMatchObject({
@@ -60,9 +69,13 @@ describe("agent registry", () => {
       codex: "/state/codex",
       "gemini-cli": join("/state/gemini-home", ".gemini"),
       "qwen-code": "/work/qwen-profile",
+      sodagent: "/skillpark/sodagent",
     });
     expect(getAgentPaths("claude", home, cwd, configDirs).active).toBe(
       join("/skillpark/claude", "skills"),
+    );
+    expect(getAgentPaths("sodagent", home, cwd, configDirs).active).toBe(
+      join("/skillpark/sodagent", "skills"),
     );
   });
 

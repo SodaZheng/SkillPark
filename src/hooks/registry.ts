@@ -6,11 +6,12 @@ import type { AgentId, HookAdapterId } from "../domain/agents.js";
 import { claudeHookAdapter } from "./adapters/claude.js";
 import { codexHookAdapter } from "./adapters/codex.js";
 import { copilotHookAdapter } from "./adapters/copilot.js";
+import { createCustomHookAdapter } from "./adapters/custom.js";
 import { geminiHookAdapter } from "./adapters/gemini.js";
 import { qwenHookAdapter } from "./adapters/qwen.js";
 import type { GatewayHookAdapter } from "./types.js";
 
-const adapters: Record<HookAdapterId, GatewayHookAdapter> = {
+const adapters: Record<Exclude<HookAdapterId, "custom">, GatewayHookAdapter> = {
   claude: claudeHookAdapter,
   codex: codexHookAdapter,
   copilot: copilotHookAdapter,
@@ -22,7 +23,10 @@ export function getGatewayHookAdapter(
   agent: AgentId,
 ): GatewayHookAdapter | undefined {
   const adapter = getAgentDefinition(agent).hook;
-  return adapter === undefined ? undefined : adapters[adapter];
+  if (adapter === undefined) return undefined;
+  return adapter === "custom"
+    ? createCustomHookAdapter(agent)
+    : adapters[adapter];
 }
 
 export function listGatewayHookAgents(): AgentId[] {

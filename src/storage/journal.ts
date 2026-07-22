@@ -1,7 +1,7 @@
 import type { FileHandle } from "node:fs/promises";
 import { mkdir, open, readdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { AGENT_IDS } from "../domain/agents.js";
+import { isAgentId } from "../domain/agents.js";
 import type { SourceStageRecovery } from "../sources/types.js";
 import type { ItemState, TransactionPlan, TransactionRecord } from "./types.js";
 
@@ -84,7 +84,7 @@ function isTransactionItem(value: unknown): boolean {
   return (
     isObject(value) &&
     isNonEmptyString(value.id) &&
-    isAllowedString(value.agent, AGENT_IDS) &&
+    isAgentId(value.agent) &&
     isNonEmptyString(value.entryName) &&
     isAllowedString(value.entryKind, entryKinds) &&
     isAllowedString(value.operation, transactionOperations) &&

@@ -9,6 +9,8 @@ import {
   type AgentId,
   type AgentPaths,
   type AgentScope,
+  type BuiltInAgentId,
+  isAgentId,
 } from "../domain/agents.js";
 import { UsageError } from "../domain/errors.js";
 
@@ -17,8 +19,8 @@ type DefinitionInput = Omit<AgentDefinition, "aliases" | "id"> & {
 };
 
 function defineAgents(
-  inputs: Record<AgentId, DefinitionInput>,
-): Record<AgentId, AgentDefinition> {
+  inputs: Record<BuiltInAgentId, DefinitionInput>,
+): Record<BuiltInAgentId, AgentDefinition> {
   return Object.fromEntries(
     AGENT_IDS.map((id) => {
       const input = inputs[id];
@@ -31,7 +33,7 @@ function defineAgents(
         },
       ];
     }),
-  ) as unknown as Record<AgentId, AgentDefinition>;
+  ) as unknown as Record<BuiltInAgentId, AgentDefinition>;
 }
 
 // Paths intentionally mirror skills@1.5.19. Keep host-specific behavior in
@@ -208,7 +210,10 @@ function projectOnly(
 }
 
 export function getAgentDefinition(agent: AgentId): AgentDefinition {
-  return definitions[agent];
+  const builtIn = definitions[agent as BuiltInAgentId];
+  if (builtIn !== undefined) return builtIn;
+  if (!isAgentId(agent)) throw invalidAgentId(agent);
+  return customAgentDefinition(agent);
 }
 
 export function listAgentDefinitions(): readonly AgentDefinition[] {
@@ -220,11 +225,31 @@ export function parseAgentId(value: string): AgentId {
   for (const definition of listAgentDefinitions()) {
     if (definition.aliases.includes(normalized)) return definition.id;
   }
-  throw new UsageError(`Unsupported agent: ${value}`);
+  if (isAgentId(normalized)) return normalized;
+  throw invalidAgentId(value);
+}
+
+function invalidAgentId(value: string): UsageError {
+  return new UsageError(
+    `Invalid agent id: ${value}. Use lowercase letters and numbers separated by single hyphens (maximum 64 characters).`,
+  );
 }
 
 export function supportsGlobalSkills(agent: AgentId): boolean {
-  return definitions[agent].globalSkillsDir !== undefined;
+  return getAgentDefinition(agent).globalSkillsDir !== undefined;
+}
+
+function customAgentDefinition(agent: AgentId): AgentDefinition {
+  const configRoot = `.${agent}`;
+  return {
+    id: agent,
+    label: agent,
+    aliases: [agent],
+    projectSkillsDir: `${configRoot}/skills`,
+    globalSkillsDir: `${configRoot}/skills`,
+    detection: { global: [configRoot], current: [configRoot] },
+    hook: "custom",
+  };
 }
 
 const nativeConfigEnvironments: Partial<
@@ -315,6 +340,18 @@ export function resolveAgentConfigDirs(
       if (configDir !== undefined) resolved[definition.id] = configDir;
     }
   }
+
+  for (const [name, value] of Object.entries(environment)) {
+    const match = /^SKILLPARK_([A-Z0-9_]+)_CONFIG_DIR$/u.exec(name);
+    const explicit = value?.trim();
+    if (match === null || explicit === undefined || explicit === "") continue;
+    const candidate = match[1]?.toLowerCase().replaceAll("_", "-");
+    if (candidate === undefined || !isAgentId(candidate)) continue;
+    const agent = parseAgentId(candidate);
+    if (resolved[agent] === undefined) {
+      resolved[agent] = expandConfigPath(explicit, homeDir, cwd);
+    }
+  }
   return resolved;
 }
 
@@ -323,7 +360,7 @@ export function getAgentConfigDir(
   homeDir: string,
   configDirs: AgentConfigDirs = {},
 ): string | undefined {
-  const definition = definitions[agent];
+  const definition = getAgentDefinition(agent);
   if (definition.globalSkillsDir === undefined) return undefined;
   return configDirs[agent] ?? join(homeDir, defaultConfigDir(definition));
 }
@@ -335,7 +372,7 @@ export function getAgentSkillRoot(
   cwd: string,
   configDirs: AgentConfigDirs = {},
 ): string {
-  const definition = definitions[agent];
+  const definition = getAgentDefinition(agent);
   if (scope === "current") return join(cwd, definition.projectSkillsDir);
   if (definition.globalSkillsDir === undefined) {
     throw new UsageError(
@@ -363,7 +400,7 @@ export function getAgentPaths(
   cwd: string = process.cwd(),
   configDirs: AgentConfigDirs = {},
 ): AgentPaths {
-  const definition = definitions[agent];
+  const definition = getAgentDefinition(agent);
   return {
     active: getAgentSkillRoot(
       agent,

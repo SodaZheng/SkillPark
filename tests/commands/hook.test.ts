@@ -174,6 +174,36 @@ describe("hook command", () => {
     expect(response.hookSpecificOutput.hookEventName).toBe("BeforeAgent");
   });
 
+  it("uses the generic UserPromptSubmit protocol for a custom agent", async () => {
+    const home = await makeTempHome();
+    const parked = join(home, ".skillpark", "skills", "sodagent");
+    await createSkill(parked, "documents", {
+      name: "documents",
+      description: "Create and edit Word documents.",
+    });
+    const { output, writes } = captureWrites();
+
+    await runHook(
+      "sodagent",
+      createCommandContext({
+        homeDir: home,
+        output,
+        input: inputWith({ prompt: "Create a Word contract" }),
+      }),
+    );
+
+    const response = JSON.parse(writes[0] as string) as {
+      hookSpecificOutput: {
+        additionalContext: string;
+        hookEventName: string;
+      };
+    };
+    expect(response.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+    expect(response.hookSpecificOutput.additionalContext).toContain(
+      'skillpark get sodagent "<entryName>"',
+    );
+  });
+
   it("rewrites Copilot's transformed prompt with search hits", async () => {
     const home = await makeTempHome();
     const parked = join(home, ".skillpark", "skills", "github-copilot");

@@ -48,7 +48,7 @@ describe("executeTransaction", () => {
     await expect(journals.list()).resolves.toEqual([record]);
   });
 
-  it("round-trips journal items for every supported agent", async () => {
+  it("round-trips journal items for built-in and custom agents", async () => {
     const home = await makeTempHome();
     const journals = createJournalStore(
       join(home, ".skillpark", ".transactions"),
@@ -58,7 +58,7 @@ describe("executeTransaction", () => {
     const allAgentsPlan: TransactionPlan = {
       ...plan,
       id: "tx-all-agents",
-      items: AGENT_IDS.map((agent, index) => ({
+      items: [...AGENT_IDS, "sodagent"].map((agent, index) => ({
         ...baseItem,
         id: `item-${index}`,
         agent,
@@ -71,6 +71,24 @@ describe("executeTransaction", () => {
     const record = await journals.create(allAgentsPlan);
 
     await expect(journals.list()).resolves.toEqual([record]);
+  });
+
+  it("rejects unsafe custom agent ids in persisted journals", async () => {
+    const home = await makeTempHome();
+    const journals = createJournalStore(
+      join(home, ".skillpark", ".transactions"),
+    );
+    const unsafePlan: TransactionPlan = {
+      ...plan,
+      id: "tx-unsafe-agent",
+      items: plan.items.map((item) => ({ ...item, agent: "../sodagent" })),
+    };
+
+    await journals.create(unsafePlan);
+
+    await expect(journals.list()).rejects.toThrow(
+      "Corrupt transaction journal",
+    );
   });
 
   it("reverts completed items in reverse order when a later item fails", async () => {

@@ -131,6 +131,34 @@ describe("store and restore", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("scans and parks skills from a custom agent's global directory", async () => {
+    const home = await makeTempHome();
+    await createSkill(join(home, ".sodagent", "skills"), "documents");
+    const context = createCommandContext({
+      homeDir: home,
+      prompts: {
+        async selectMany(message, choices) {
+          expect(message).toBe("Select sodagent skills to park");
+          expect(choices.map((choice) => choice.value)).toEqual(["documents"]);
+          return ["documents"];
+        },
+        async confirm() {
+          return true;
+        },
+      },
+      output: silentOutput(),
+    });
+
+    await runMoveSkills("store", "sodagent", context);
+
+    await expect(
+      access(join(home, ".sodagent", "skills", "documents")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      access(join(home, ".skillpark", "skills", "sodagent", "documents")),
+    ).resolves.toBeUndefined();
+  });
+
   it("makes no change when selection is cancelled", async () => {
     const home = await makeTempHome();
     const active = await createSkill(join(home, ".claude", "skills"), "pdf");
@@ -488,7 +516,7 @@ describe("store and restore", () => {
     await expect(access(activeRoot)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("accepts agent aliases and rejects unknown agents before prompting", async () => {
+  it("accepts agent aliases and rejects unsafe custom ids before prompting", async () => {
     const home = await makeTempHome();
     await createSkill(join(home, ".claude", "skills"), "pdf");
     let prompted = 0;
@@ -516,7 +544,7 @@ describe("store and restore", () => {
 
     await runMoveSkills("store", "claude-code", context);
     await expect(
-      runMoveSkills("store", "unknown", context),
+      runMoveSkills("store", "../unknown", context),
     ).rejects.toBeInstanceOf(UsageError);
     expect(prompted).toBe(1);
     await expect(access(join(home, ".skillpark"))).rejects.toMatchObject({

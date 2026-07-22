@@ -181,14 +181,14 @@ describe("built CLI", () => {
     expect(version).toMatchObject({ code: 0, stdout: "0.1.1\n", stderr: "" });
   });
 
-  it("maps unknown commands and agents to exit code 2", async () => {
+  it("maps unknown commands and invalid agent ids to exit code 2", async () => {
     const command = await run(["launch"]);
-    const agent = await run(["store", "other"]);
+    const agent = await run(["store", "../other"]);
     const installComponent = await run(["install", "claude", "skill"]);
     expect(command.code).toBe(2);
     expect(command.stderr).toContain("unknown command 'launch'");
     expect(agent.code).toBe(2);
-    expect(agent.stderr).toContain("Unsupported agent: other");
+    expect(agent.stderr).toContain("Invalid agent id: ../other");
     expect(installComponent.code).toBe(1);
     expect(installComponent.stderr).toContain("too many arguments");
   });
@@ -239,6 +239,21 @@ describe("built CLI", () => {
       "utf8",
     );
     expect(hookConfiguration.match(/skillpark hook codex/g)).toHaveLength(1);
+  });
+
+  it("installs SkillPark for a convention-based custom agent", async () => {
+    const result = await runInteractive(["install", "sodagent"], "\r");
+
+    expect(result).toMatchObject({ code: 0, stderr: "" });
+    await expect(
+      readFile(
+        join(result.home, ".sodagent", "skills", "skillpark", "SKILL.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("SkillPark Read-Only Gateway");
+    await expect(
+      readFile(join(result.home, ".sodagent", "settings.json"), "utf8"),
+    ).resolves.toContain("skillpark hook sodagent");
   });
 
   it("selects an agent interactively when store omits it", async () => {

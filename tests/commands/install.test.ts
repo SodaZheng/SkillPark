@@ -146,8 +146,8 @@ describe("install command", () => {
     });
   });
 
-  it.each(["hook", "skill"])(
-    "does not treat install $agent as a component shortcut",
+  it.each(["../hook", "skill name"])(
+    "rejects unsafe custom agent id $agent before prompting",
     async (agent) => {
       const home = await makeTempHome();
       let prompted = false;
@@ -170,10 +170,42 @@ describe("install command", () => {
             },
           }),
         ).parseAsync(["node", "skillpark", "install", agent]),
-      ).rejects.toEqual(new UsageError(`Unsupported agent: ${agent}`));
+      ).rejects.toEqual(
+        new UsageError(
+          `Invalid agent id: ${agent}. Use lowercase letters and numbers separated by single hyphens (maximum 64 characters).`,
+        ),
+      );
       expect(prompted).toBe(false);
     },
   );
+
+  it("installs a gateway skill and generic prompt hook for a custom agent", async () => {
+    const home = await makeTempHome();
+    const context = createCommandContext({ homeDir: home });
+
+    await runInstall("sodagent", context);
+    await runInstall("sodagent", context);
+
+    await expect(
+      readFile(
+        join(home, ".sodagent", "skills", "skillpark", "SKILL.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("SkillPark Read-Only Gateway");
+    const configuration = await readJson(
+      join(home, ".sodagent", "settings.json"),
+    );
+    expect(
+      hookCommands(configuration).filter(
+        (command) => command === "skillpark hook sodagent",
+      ),
+    ).toHaveLength(1);
+    const groups = (configuration.hooks as Record<string, unknown>)
+      .UserPromptSubmit as { hooks: { commandWindows?: string }[] }[];
+    expect(groups.at(-1)?.hooks[0]?.commandWindows).toBe(
+      "skillpark.cmd hook sodagent",
+    );
+  });
 
   it.each(agents)(
     "installs the gateway skill and search hook globally for $agent by default",
@@ -558,12 +590,12 @@ describe("install command", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rejects unsupported agents before changing the filesystem", async () => {
+  it("rejects unsafe custom agent ids before changing the filesystem", async () => {
     const home = await makeTempHome();
 
     await expect(
-      runInstall("other", createCommandContext({ homeDir: home })),
-    ).rejects.toEqual(new UsageError("Unsupported agent: other"));
+      runInstall("../other", createCommandContext({ homeDir: home })),
+    ).rejects.toThrow("Invalid agent id");
     await expect(access(join(home, ".skillpark"))).rejects.toMatchObject({
       code: "ENOENT",
     });

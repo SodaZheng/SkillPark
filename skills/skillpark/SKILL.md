@@ -9,7 +9,8 @@ Discover and load parked skills without restoring them or placing their catalog
 in model context. Use the CLI as the source of truth. Select the
 skills-compatible id for the current host, such as `claude`, `codex`,
 `gemini-cli`, `github-copilot`, or `qwen-code`. Always pass the id explicitly;
-never open an interactive prompt from the gateway.
+for a convention-based custom host, use its exact normalized id, such as
+`sodagent`. Never open an interactive prompt from the gateway.
 
 ## Search before every request
 

@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { createProgram } from "../../src/app/create-program.js";
 import { createCommandContext } from "../../src/commands/context.js";
 import { collectAgentStatus } from "../../src/commands/list.js";
-import { UsageError } from "../../src/domain/errors.js";
 import type { OutputPort } from "../../src/tui/ports.js";
 import { createSkill, makeTempHome } from "../support/fs.js";
 
@@ -211,15 +210,28 @@ describe("list command", () => {
     expect(messages[0]).toContain("Parked (0)");
   });
 
-  it("rejects an unknown agent", async () => {
+  it("uses convention-based paths for a custom agent", async () => {
+    const home = await makeTempHome();
+    const { messages, output } = captureOutput();
+
+    await createProgram(
+      createCommandContext({ homeDir: home, output }),
+    ).parseAsync(["node", "skillpark", "list", "sodagent"]);
+
+    expect(messages[0]?.split("\n")[0]).toBe("sodagent");
+    expect(messages[0]).toContain("Active (0)");
+    expect(messages[0]).toContain("Parked (0)");
+  });
+
+  it("rejects an unsafe custom agent id", async () => {
     const home = await makeTempHome();
     const { output } = captureOutput();
 
     await expect(
       createProgram(createCommandContext({ homeDir: home, output })).parseAsync(
-        ["node", "skillpark", "list", "other"],
+        ["node", "skillpark", "list", "../other"],
       ),
-    ).rejects.toEqual(new UsageError("Unsupported agent: other"));
+    ).rejects.toThrow("Invalid agent id");
   });
 
   it("prompts for an agent when omitted and writes only its status", async () => {

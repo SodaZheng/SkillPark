@@ -74,10 +74,27 @@ export const AGENT_IDS = [
   "universal",
 ] as const;
 
-export type AgentId = (typeof AGENT_IDS)[number];
+export type BuiltInAgentId = (typeof AGENT_IDS)[number];
+export type AgentId = string;
 export type AgentScope = "global" | "current";
-export type HookAdapterId = "claude" | "codex" | "gemini" | "copilot" | "qwen";
+export type HookAdapterId =
+  | "claude"
+  | "codex"
+  | "custom"
+  | "gemini"
+  | "copilot"
+  | "qwen";
 export type AgentConfigDirs = Partial<Record<AgentId, string>>;
+
+const AGENT_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
+export function isAgentId(value: unknown): value is AgentId {
+  return (
+    typeof value === "string" &&
+    value.length <= 64 &&
+    AGENT_ID_PATTERN.test(value)
+  );
+}
 
 export interface AgentPaths {
   active: string;

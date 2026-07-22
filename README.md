@@ -52,8 +52,8 @@ SkillPark is built around three goals:
   and conservative typo matching without a model weight.
 - **Bounded context** — the full catalog is omitted; search returns at most 5 metadata hits by
   default, and the host model still applies native skill-trigger rules.
-- **73 agent targets** — paths and detection rules cover a broad set of coding agents and skill
-  hosts.
+- **73 built-in targets plus custom agents** — use the catalog defaults or pass a new agent id to
+  use convention-based skill and hook paths.
 - **Native prompt hooks** — adapters for Claude Code, Codex, Gemini CLI, Qwen Code, and GitHub
   Copilot.
 - **Complete skill lifecycle** — add from local or Git sources, park active skills, restore parked
@@ -85,6 +85,30 @@ add a Git source.
 - npm (for global installation)
 - Git only when adding skills from Git repositories
 
+## Custom agents
+
+An explicit, unknown agent id is treated as a custom agent. For example:
+
+```bash
+skillpark install sodagent
+skillpark store sodagent
+```
+
+The id must contain lowercase letters and numbers separated by single hyphens; input is normalized
+to lowercase. SkillPark uses these conventions:
+
+| Resource | Global | Current project |
+| --- | --- | --- |
+| Active skills | `~/.sodagent/skills/` | `./.sodagent/skills/` |
+| Gateway skill | `~/.sodagent/skills/skillpark/` | `./.sodagent/skills/skillpark/` |
+| Hook configuration | `~/.sodagent/settings.json` | `./.sodagent/settings.json` |
+| Parked skills | `~/.skillpark/skills/sodagent/` | same global inventory |
+
+Custom agents use the grouped JSON `UserPromptSubmit` hook protocol. The agent must support that
+protocol and discover `skills/*/SKILL.md`; otherwise the files are installed but the host will not
+consume them. Custom ids are explicit-only and are not added to the built-in interactive agent
+picker. `list`, `restore`, `search`, and `get` accept the same custom id.
+
 ## Custom agent config directories
 
 SkillPark reads the agents' own config-directory environment variables, so a
@@ -107,6 +131,9 @@ export SKILLPARK_CLAUDE_CONFIG_DIR=~/home/soda/.claude
 export SKILLPARK_GITHUB_COPILOT_CONFIG_DIR=/mnt/agent-config/copilot
 skillpark agents
 ```
+
+The same override works for an explicit custom id, for example
+`SKILLPARK_SODAGENT_CONFIG_DIR=/mnt/agent-config/sodagent skillpark install sodagent`.
 
 The uniform override points directly to that agent's config root. SkillPark
 preserves the target's existing skill subdirectory layout; for example,
@@ -198,21 +225,21 @@ loading the exact parked entry.
 
 | Command | Purpose |
 | --- | --- |
-| `skillpark agents` | List all supported agents, detection state, paths, and hook support |
+| `skillpark agents` | List built-in agents, detection state, paths, and hook support |
 | `skillpark add <source>` | Discover skills in a local or Git source and copy selected skills into selected agents' parked inventories |
 | `skillpark store [agent]` | Move selected active skills into the agent's parked inventory |
 | `skillpark restore [agent]` | Move selected parked skills back to the agent's active directory |
 | `skillpark list [agent]` | List active and parked skills, conflicts, and metadata warnings |
 | `skillpark list [agent] --parked` | Show only parked skills |
 | `skillpark list [agent] -q <query>` | Filter the visible inventory |
-| `skillpark install [agent]` | Install the gateway skill and a supported native hook |
+| `skillpark install [agent]` | Install the gateway skill and its built-in or custom hook |
 | `skillpark install [agent] --force` | Atomically replace only a conflicting gateway skill; hook settings are still merged |
 | `skillpark search <agent> "<keywords>"` | Search parked metadata without loading a skill |
 | `skillpark search <agent> --limit <1-10> "<keywords>"` | Override the maximum number of bounded search hits |
 | `skillpark get [agent] <skill>` | Print one parked skill's root, instruction path, and complete `SKILL.md` |
 
 When an agent argument is omitted from an interactive command, SkillPark asks you to choose one.
-Explicit ids remain available for scripts and automation.
+Explicit ids remain available for scripts and automation and are required for custom agents.
 
 ## Supported sources
 
@@ -236,9 +263,9 @@ SkillPark recognizes a skill at the source root and inside common containers suc
 
 ## Supported agents
 
-SkillPark currently defines 73 agent targets. `claude-code` is accepted as an alias for `claude`.
-Eve and PromptScript are project-only; all other targets expose the roots described by their agent
-definition.
+SkillPark defines 73 built-in agent targets and also accepts convention-based custom ids.
+`claude-code` is accepted as an alias for `claude`. Eve and PromptScript are project-only; all
+other built-in targets expose the roots described by their agent definition.
 
 <details>
 <summary>Show all accepted agent ids</summary>
@@ -265,9 +292,11 @@ zed zcode zencoder zenflow neovate pochi promptscript adal universal
 | Gemini CLI | `BeforeAgent` | `~/.gemini/settings.json` | `./.gemini/settings.json` |
 | Qwen Code | `UserPromptSubmit` | `~/.qwen/settings.json` | `./.qwen/settings.json` |
 | GitHub Copilot | `userPromptTransformed` | `~/.copilot/settings.json` | `./.github/copilot/settings.json` |
+| Custom `<agent>` | `UserPromptSubmit` | `~/.<agent>/settings.json` | `./.<agent>/settings.json` |
 
-For every other supported agent, `install` installs the gateway skill and skips hook configuration.
-SkillPark never writes one host's hook schema as a fallback for another host.
+For built-in agents without an adapter, `install` installs the gateway skill and skips hook
+configuration. An explicitly named custom agent opts into the documented generic protocol; it is
+not used as a fallback for built-in targets.
 
 Hook installation is idempotent. Existing settings and unrelated hook groups are preserved, while
 invalid JSON is rejected instead of overwritten. Keep the globally installed `skillpark` command
@@ -294,6 +323,8 @@ Representative gateway paths are shown below. Parked skills remain under
 | Qwen Code | Current project | `./.qwen/skills/skillpark/` |
 | GitHub Copilot | Global | `~/.copilot/skills/skillpark/` |
 | GitHub Copilot | Current project | `./.agents/skills/skillpark/` |
+| Custom `<agent>` | Global | `~/.<agent>/skills/skillpark/` |
+| Custom `<agent>` | Current project | `./.<agent>/skills/skillpark/` |
 
 There is no `--current` flag. Installation scope is intentionally selected in the interactive
 prompt. `--force` applies only to the gateway skill directory, never to unrelated hook settings.
