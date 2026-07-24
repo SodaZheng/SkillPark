@@ -174,7 +174,7 @@ describe("install command", () => {
     await expect(
       readFile(join(home, ".sodagent", "AGENTS.md"), "utf8"),
     ).resolves.toContain(
-      "Use the installed skill named `skillpark` through the host's normal skill mechanism",
+      "Invoke the installed `skillpark` skill through the host's normal skill mechanism",
     );
     await expect(
       access(
@@ -275,7 +275,7 @@ describe("install command", () => {
     await expect(
       readFile(join(current, ".github/copilot-instructions.md"), "utf8"),
     ).resolves.toContain(
-      "Use the installed skill named `skillpark` through the host's normal skill mechanism",
+      "Invoke the installed `skillpark` skill through the host's normal skill mechanism",
     );
   });
 
@@ -329,9 +329,7 @@ describe("install command", () => {
         expect(instructions).toContain(
           `host's SkillPark agent id is \`${agent}\``,
         );
-        expect(instructions).toContain(
-          "invoke the `skillpark` skill before acting",
-        );
+        expect(instructions).toContain("### BLOCKING capability check");
         expect(instructions).not.toContain("skillpark search");
         expect(instructions).not.toContain("skillpark get");
       }
@@ -364,9 +362,7 @@ describe("install command", () => {
     const instructions = await readFile(contextPath, "utf8");
     expect(instructions).toContain("Always preserve this text.");
     expect(instructions).not.toContain("old SkillPark guidance");
-    expect(instructions).toContain(
-      "invoke the `skillpark` skill before acting",
-    );
+    expect(instructions).toContain("### BLOCKING capability check");
     expect(
       instructions.match(/<!-- skillpark-context:claude:start -->/gu),
     ).toHaveLength(1);

@@ -223,7 +223,7 @@ describe("built CLI", () => {
     await expect(
       readFile(join(result.home, ".codex", "AGENTS.md"), "utf8"),
     ).resolves.toContain(
-      "Use the installed skill named `skillpark` through the host's normal skill mechanism",
+      "Invoke the installed `skillpark` skill through the host's normal skill mechanism",
     );
     await expect(
       access(join(result.home, ".codex", "hooks.json")),

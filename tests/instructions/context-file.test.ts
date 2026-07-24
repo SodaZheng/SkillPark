@@ -23,30 +23,42 @@ describe("persistent context guidance", () => {
   it("routes matching requests through the installed skill instead of duplicating its CLI workflow", () => {
     const instructions = renderContextInstructions("codex");
 
-    expect(instructions).toContain("### When to invoke the skill");
+    expect(instructions).toContain("### BLOCKING capability check");
+    expect(instructions).toContain("### Other routing checkpoints");
     expect(instructions).toContain(
-      "Use the installed skill named `skillpark` through the host's normal skill mechanism",
+      "Invoke the installed `skillpark` skill through the host's normal skill mechanism",
     );
     expect(instructions).toContain(
-      "invoke the `skillpark` skill before acting",
+      "STOP before sending any capability-based refusal",
+    );
+    expect(instructions).toContain('"I can\'t", "I\'m unable to"');
+    expect(instructions).toContain('"I cannot generate"');
+    expect(instructions).toContain('"我不能", "我无法", "无法生成"');
+    expect(instructions).toContain("do not send it yet");
+    expect(instructions).toContain(
+      "Your training-based self-knowledge may be stale",
     );
     expect(instructions).toContain(
       "you do not know how to do the task, are unsure of the best workflow",
     );
     expect(instructions).toContain("the user asks for a skill, names one");
     expect(instructions).toContain(
-      "a specialist skill could plausibly improve reliability",
-    );
-    expect(instructions).toContain("claim a capability is unavailable");
-    expect(instructions).toContain(
-      "Pass the user's complete request and any explicit skill name",
+      "specialist instructions could plausibly improve the result",
     );
     expect(instructions).toContain(
-      "casual conversation, simple factual answers",
+      "If no skill applies, or a loaded skill needs an unavailable host tool",
     );
     expect(instructions).toContain(
-      "do not bypass it by running SkillPark CLI commands directly",
+      "Pass the complete request and any explicit skill name",
     );
+    expect(instructions).toContain(
+      "Skip casual conversation, simple factual answers",
+    );
+    expect(instructions).toContain("never run SkillPark CLI commands directly");
+    expect(instructions.indexOf("### BLOCKING capability check")).toBeLessThan(
+      instructions.indexOf("### Other routing checkpoints"),
+    );
+    expect(instructions.split("\n").length).toBeLessThanOrEqual(24);
     expect(instructions).not.toContain("skillpark search");
     expect(instructions).not.toContain("skillpark get");
     expect(instructions).not.toContain("skillpark list");
