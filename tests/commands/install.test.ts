@@ -1,17 +1,19 @@
 import {
   access,
+  cp,
   mkdir,
   readdir,
   readFile,
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProgram } from "../../src/app/create-program.js";
 import { createCommandContext } from "../../src/commands/context.js";
 import { runInstall } from "../../src/commands/install.js";
 import { UsageError } from "../../src/domain/errors.js";
+import { bundledGatewaySkillRoot } from "../../src/skills/gateway.js";
 import {
   CANCELLED,
   type OutputPort,
@@ -59,38 +61,12 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
 }
 
-function hookCommands(configuration: Record<string, unknown>): string[] {
-  const hooks = configuration.hooks as Record<string, unknown>;
-  const groups = hooks.UserPromptSubmit as {
-    hooks: { command?: string }[];
-  }[];
-  return groups.flatMap((group) =>
-    group.hooks.flatMap((handler) =>
-      handler.command === undefined ? [] : [handler.command],
-    ),
-  );
-}
-
-function groupedHookCommands(
-  configuration: Record<string, unknown>,
-  event: string,
-): string[] {
-  const hooks = configuration.hooks as Record<string, unknown>;
-  const groups = hooks[event] as { hooks: { command?: string }[] }[];
-  return groups.flatMap((group) =>
-    group.hooks.flatMap((handler) =>
-      handler.command === undefined ? [] : [handler.command],
-    ),
-  );
-}
-
 const agents = [
   {
     agent: "claude",
     configRoot: ".claude",
-    hookFile: "settings.json",
   },
-  { agent: "codex", configRoot: ".codex", hookFile: "hooks.json" },
+  { agent: "codex", configRoot: ".codex" },
 ] as const;
 
 describe("install command", () => {
@@ -179,7 +155,7 @@ describe("install command", () => {
     },
   );
 
-  it("installs a gateway skill and generic prompt hook for a custom agent", async () => {
+  it("installs a gateway skill and persistent context for a custom agent", async () => {
     const home = await makeTempHome();
     const context = createCommandContext({ homeDir: home });
 
@@ -192,24 +168,24 @@ describe("install command", () => {
         "utf8",
       ),
     ).resolves.toContain("SkillPark Read-Only Gateway");
-    const configuration = await readJson(
-      join(home, ".sodagent", "settings.json"),
+    await expect(
+      access(join(home, ".sodagent", "settings.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(home, ".sodagent", "AGENTS.md"), "utf8"),
+    ).resolves.toContain(
+      "Use the installed skill named `skillpark` through the host's normal skill mechanism",
     );
-    expect(
-      hookCommands(configuration).filter(
-        (command) => command === "skillpark hook sodagent",
+    await expect(
+      access(
+        join(home, ".sodagent", "skills", "skillpark", "agents", "openai.yaml"),
       ),
-    ).toHaveLength(1);
-    const groups = (configuration.hooks as Record<string, unknown>)
-      .UserPromptSubmit as { hooks: { commandWindows?: string }[] }[];
-    expect(groups.at(-1)?.hooks[0]?.commandWindows).toBe(
-      "skillpark.cmd hook sodagent",
-    );
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each(agents)(
-    "installs the gateway skill and search hook globally for $agent by default",
-    async ({ agent, configRoot, hookFile }) => {
+    "installs the gateway skill and context globally for $agent by default",
+    async ({ agent, configRoot }) => {
       const home = await makeTempHome();
       const current = await makeTempHome();
       const { messages, output } = captureOutput();
@@ -229,17 +205,12 @@ describe("install command", () => {
         "utf8",
       );
       expect(instructions).toContain("skillpark get <agent>");
-      await expect(
-        access(join(destination, "agents", "openai.yaml")),
-      ).resolves.toBeUndefined();
-      const hookPath = join(home, configRoot, hookFile);
-      const configuration = await readJson(hookPath);
-      expect(hookCommands(configuration)).toContain(`skillpark hook ${agent}`);
-      const groups = (configuration.hooks as Record<string, unknown>)
-        .UserPromptSubmit as { hooks: { commandWindows?: string }[] }[];
-      expect(groups.at(-1)?.hooks[0]?.commandWindows).toBe(
-        agent === "codex" ? "skillpark.cmd hook codex" : undefined,
-      );
+      const codexMetadata = access(join(destination, "agents", "openai.yaml"));
+      if (agent === "codex") {
+        await expect(codexMetadata).resolves.toBeUndefined();
+      } else {
+        await expect(codexMetadata).rejects.toMatchObject({ code: "ENOENT" });
+      }
       await expect(access(join(current, configRoot))).rejects.toMatchObject({
         code: "ENOENT",
       });
@@ -249,40 +220,43 @@ describe("install command", () => {
       expect(messages).toContain(
         `Installed SkillPark gateway skill for ${agent} (global): ${destination}`,
       );
-      expect(messages).toContain(
-        `Installed SkillPark search hook for ${agent} (global): ${hookPath}`,
-      );
+      expect(messages).not.toContainEqual(expect.stringContaining("hook"));
     },
   );
 
   it.each([
     {
       agent: "gemini-cli",
-      event: "BeforeAgent",
-      hookPath: ".gemini/settings.json",
+      instructionPath: ".gemini/GEMINI.md",
       skillPath: ".gemini/skills/skillpark/SKILL.md",
     },
     {
       agent: "qwen-code",
-      event: "UserPromptSubmit",
-      hookPath: ".qwen/settings.json",
+      instructionPath: ".qwen/QWEN.md",
       skillPath: ".qwen/skills/skillpark/SKILL.md",
     },
   ] as const)(
-    "installs the native prompt hook and gateway skill for $agent",
-    async ({ agent, event, hookPath, skillPath }) => {
+    "installs native context guidance and the gateway skill for $agent",
+    async ({ agent, instructionPath, skillPath }) => {
       const home = await makeTempHome();
 
       await runInstall(agent, createCommandContext({ homeDir: home }));
 
       await expect(access(join(home, skillPath))).resolves.toBeUndefined();
-      expect(
-        groupedHookCommands(await readJson(join(home, hookPath)), event),
-      ).toContain(`skillpark hook ${agent}`);
+      const contextInstructions = await readFile(
+        join(home, instructionPath),
+        "utf8",
+      );
+      expect(contextInstructions).toContain("## SkillPark skill routing");
+      expect(contextInstructions).toContain(
+        `host's SkillPark agent id is \`${agent}\``,
+      );
+      expect(contextInstructions).not.toContain("skillpark search");
+      expect(contextInstructions).not.toContain("skillpark get");
     },
   );
 
-  it("installs GitHub Copilot's prompt-transform hook format", async () => {
+  it("installs GitHub Copilot's context guidance without settings hooks", async () => {
     const home = await makeTempHome();
     const current = await makeTempHome();
 
@@ -295,20 +269,133 @@ describe("install command", () => {
     await expect(
       access(join(current, ".agents/skills/skillpark/SKILL.md")),
     ).resolves.toBeUndefined();
-    const configuration = await readJson(
-      join(current, ".github/copilot/settings.json"),
+    await expect(
+      access(join(current, ".github/copilot/settings.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(current, ".github/copilot-instructions.md"), "utf8"),
+    ).resolves.toContain(
+      "Use the installed skill named `skillpark` through the host's normal skill mechanism",
     );
-    const hooks = configuration.hooks as Record<string, unknown>;
-    expect(hooks.userPromptTransformed).toEqual([
-      expect.objectContaining({
-        command: "skillpark hook github-copilot",
-        timeoutSec: 30,
-        type: "command",
-      }),
-    ]);
   });
 
-  it("installs only the skill for hookless agents without a warning", async () => {
+  it.each([
+    {
+      agent: "claude",
+      globalPath: ".claude/CLAUDE.md",
+      currentPath: "CLAUDE.md",
+    },
+    {
+      agent: "codex",
+      globalPath: ".codex/AGENTS.md",
+      currentPath: "AGENTS.md",
+    },
+    {
+      agent: "gemini-cli",
+      globalPath: ".gemini/GEMINI.md",
+      currentPath: "GEMINI.md",
+    },
+    {
+      agent: "qwen-code",
+      globalPath: ".qwen/QWEN.md",
+      currentPath: "QWEN.md",
+    },
+    {
+      agent: "github-copilot",
+      globalPath: ".copilot/copilot-instructions.md",
+      currentPath: ".github/copilot-instructions.md",
+    },
+  ] as const)(
+    "installs agent-specific context files for $agent",
+    async ({ agent, currentPath, globalPath }) => {
+      const home = await makeTempHome();
+      const current = await makeTempHome();
+
+      await runInstall(
+        agent,
+        createCommandContext({ cwd: current, homeDir: home }),
+      );
+      await runInstall(
+        agent,
+        createCommandContext({ cwd: current, homeDir: home }),
+        { scope: "current" },
+      );
+
+      for (const path of [join(home, globalPath), join(current, currentPath)]) {
+        const instructions = await readFile(path, "utf8");
+        expect(instructions).toContain(
+          `<!-- skillpark-context:${agent}:start -->`,
+        );
+        expect(instructions).toContain(
+          `host's SkillPark agent id is \`${agent}\``,
+        );
+        expect(instructions).toContain(
+          "invoke the `skillpark` skill before acting",
+        );
+        expect(instructions).not.toContain("skillpark search");
+        expect(instructions).not.toContain("skillpark get");
+      }
+    },
+  );
+
+  it("preserves user instructions and idempotently refreshes its marked block", async () => {
+    const home = await makeTempHome();
+    const contextPath = join(home, ".claude", "CLAUDE.md");
+    await mkdir(join(home, ".claude"), { recursive: true });
+    await writeFile(
+      contextPath,
+      [
+        "# My instructions",
+        "",
+        "Always preserve this text.",
+        "",
+        "<!-- skillpark-context:claude:start -->",
+        "old SkillPark guidance",
+        "<!-- skillpark-context:claude:end -->",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const context = createCommandContext({ homeDir: home });
+    await runInstall("claude", context);
+    await runInstall("claude", context);
+
+    const instructions = await readFile(contextPath, "utf8");
+    expect(instructions).toContain("Always preserve this text.");
+    expect(instructions).not.toContain("old SkillPark guidance");
+    expect(instructions).toContain(
+      "invoke the `skillpark` skill before acting",
+    );
+    expect(
+      instructions.match(/<!-- skillpark-context:claude:start -->/gu),
+    ).toHaveLength(1);
+    expect(
+      instructions.match(/<!-- skillpark-context:claude:end -->/gu),
+    ).toHaveLength(1);
+  });
+
+  it("rejects malformed context markers before installing the gateway", async () => {
+    const home = await makeTempHome();
+    await mkdir(join(home, ".codex"), { recursive: true });
+    await writeFile(
+      join(home, ".codex", "AGENTS.md"),
+      "<!-- skillpark-context:codex:start -->\nbroken\n",
+      "utf8",
+    );
+
+    await expect(
+      runInstall("codex", createCommandContext({ homeDir: home })),
+    ).rejects.toThrow("contains malformed SkillPark markers");
+    await expect(
+      access(join(home, ".codex", "skills", "skillpark")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      access(join(home, ".codex", "hooks.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("installs gateway and AGENTS.md compatibility guidance for other agents", async () => {
     const home = await makeTempHome();
     const { messages, output } = captureOutput();
 
@@ -317,9 +404,66 @@ describe("install command", () => {
     await expect(
       access(join(home, ".cursor/skills/skillpark/SKILL.md")),
     ).resolves.toBeUndefined();
-    expect(messages).not.toContainEqual(
-      expect.stringContaining("search hook protocol"),
+    await expect(
+      readFile(join(home, ".cursor", "AGENTS.md"), "utf8"),
+    ).resolves.toContain("host's SkillPark agent id is `cursor`");
+    expect(messages).toContainEqual(
+      expect.stringContaining("AGENTS.md compatibility guidance for cursor"),
     );
+    expect(messages).not.toContainEqual(expect.stringContaining("hook"));
+  });
+
+  it("keeps multiple agent blocks isolated in a shared project AGENTS.md", async () => {
+    const home = await makeTempHome();
+    const current = await makeTempHome();
+    const context = createCommandContext({ cwd: current, homeDir: home });
+
+    await runInstall("codex", context, { scope: "current" });
+    await runInstall("cursor", context, { scope: "current" });
+    await runInstall("cursor", context, { scope: "current" });
+
+    const instructions = await readFile(join(current, "AGENTS.md"), "utf8");
+    expect(instructions).toContain("<!-- skillpark-context:codex:start -->");
+    expect(instructions).toContain("<!-- skillpark-context:cursor:start -->");
+    expect(instructions).toContain("host's SkillPark agent id is `codex`");
+    expect(instructions).toContain("host's SkillPark agent id is `cursor`");
+    expect(instructions).not.toContain("skillpark search");
+    expect(instructions).not.toContain("skillpark get");
+    expect(
+      instructions.match(/<!-- skillpark-context:cursor:start -->/gu),
+    ).toHaveLength(1);
+    await expect(
+      access(
+        join(
+          current,
+          ".agents",
+          "skills",
+          "skillpark",
+          "agents",
+          "openai.yaml",
+        ),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("restores Codex metadata when Codex joins a shared project skill root", async () => {
+    const home = await makeTempHome();
+    const current = await makeTempHome();
+    const context = createCommandContext({ cwd: current, homeDir: home });
+    const metadata = join(
+      current,
+      ".agents",
+      "skills",
+      "skillpark",
+      "agents",
+      "openai.yaml",
+    );
+
+    await runInstall("cursor", context, { scope: "current" });
+    await expect(access(metadata)).rejects.toMatchObject({ code: "ENOENT" });
+
+    await runInstall("codex", context, { scope: "current" });
+    await expect(access(metadata)).resolves.toBeUndefined();
   });
 
   it("supports current-project installation for project-only agents", async () => {
@@ -339,11 +483,14 @@ describe("install command", () => {
     await expect(
       access(join(current, "agent/skills/skillpark/SKILL.md")),
     ).resolves.toBeUndefined();
+    await expect(
+      readFile(join(current, "AGENTS.md"), "utf8"),
+    ).resolves.toContain("host's SkillPark agent id is `eve`");
   });
 
   it.each(agents)(
-    "supports project-local skill and hook installation for $agent",
-    async ({ agent, configRoot, hookFile }) => {
+    "supports project-local skill and context installation for $agent",
+    async ({ agent, configRoot }) => {
       const home = await makeTempHome();
       const current = await makeTempHome();
       const selection: { choices?: string[]; message?: string } = {};
@@ -367,10 +514,6 @@ describe("install command", () => {
           ),
         ),
       ).resolves.toBeUndefined();
-      const hookPath = join(current, configRoot, hookFile);
-      expect(hookCommands(await readJson(hookPath))).toContain(
-        `skillpark hook ${agent}`,
-      );
       await expect(access(join(home, configRoot))).rejects.toMatchObject({
         code: "ENOENT",
       });
@@ -396,7 +539,110 @@ describe("install command", () => {
     });
   });
 
-  it("merges with existing hooks and is idempotent", async () => {
+  it.each([
+    {
+      agent: "claude",
+      configPath: ".claude/settings.json",
+      configuration: {
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [{ type: "command", command: "skillpark hook claude" }],
+            },
+          ],
+        },
+      },
+    },
+    {
+      agent: "codex",
+      configPath: ".codex/hooks.json",
+      configuration: {
+        description: "SkillPark read-only parked-skill search",
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "skillpark hook codex",
+                  commandWindows: "skillpark.cmd hook codex",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    {
+      agent: "gemini-cli",
+      configPath: ".gemini/settings.json",
+      configuration: {
+        hooks: {
+          BeforeAgent: [
+            {
+              hooks: [
+                { type: "command", command: "skillpark hook gemini-cli" },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    {
+      agent: "qwen-code",
+      configPath: ".qwen/settings.json",
+      configuration: {
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [{ type: "command", command: "skillpark hook qwen-code" }],
+            },
+          ],
+        },
+      },
+    },
+    {
+      agent: "github-copilot",
+      configPath: ".copilot/settings.json",
+      configuration: {
+        hooks: {
+          userPromptTransformed: [
+            {
+              type: "command",
+              command: "skillpark hook github-copilot",
+            },
+          ],
+        },
+      },
+    },
+    {
+      agent: "sodagent",
+      configPath: ".sodagent/settings.json",
+      configuration: {
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [{ type: "command", command: "skillpark hook sodagent" }],
+            },
+          ],
+        },
+      },
+    },
+  ])(
+    "deletes an otherwise empty legacy hook config for $agent",
+    async ({ agent, configPath, configuration }) => {
+      const home = await makeTempHome();
+      const path = join(home, configPath);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, `${JSON.stringify(configuration)}\n`, "utf8");
+
+      await runInstall(agent, createCommandContext({ homeDir: home }));
+
+      await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
+  it("removes every SkillPark hook while preserving user settings and hooks", async () => {
     const home = await makeTempHome();
     const configRoot = join(home, ".claude");
     const configPath = join(configRoot, "settings.json");
@@ -410,7 +656,12 @@ describe("install command", () => {
             UserPromptSubmit: [
               {
                 matcher: "",
-                hooks: [{ type: "command", command: "existing-hook" }],
+                hooks: [
+                  { type: "command", command: "existing-hook" },
+                  { type: "command", command: "skillpark hook claude" },
+                  { type: "command", command: "skillpark hook claude" },
+                  { type: "command", command: "skillpark hook codex" },
+                ],
               },
             ],
           },
@@ -428,38 +679,84 @@ describe("install command", () => {
 
     const configuration = await readJson(configPath);
     expect(configuration.permissions).toEqual({ allow: ["Read"] });
-    expect(hookCommands(configuration)).toEqual([
-      "existing-hook",
-      "skillpark hook claude",
-    ]);
+    expect(configuration).toMatchObject({
+      permissions: { allow: ["Read"] },
+      hooks: {
+        UserPromptSubmit: [
+          {
+            matcher: "",
+            hooks: [{ type: "command", command: "existing-hook" }],
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(configuration)).not.toContain("skillpark hook");
     expect(
-      messages.filter((message) => message.includes("already installed")),
-    ).toHaveLength(2);
+      messages.filter((message) =>
+        message.includes("Removed 3 legacy SkillPark hook handlers"),
+      ),
+    ).toHaveLength(1);
     expect(await context.journals.list()).toEqual([]);
   });
 
-  it("installs the global skill and hook into a custom agent config directory", async () => {
+  it("uses a custom agent config directory for skill, cleanup, and context", async () => {
     const home = await makeTempHome();
     const customConfig = await makeTempHome();
     const context = createCommandContext({
       homeDir: home,
       agentConfigDirs: { claude: customConfig },
     });
+    await writeFile(
+      join(customConfig, "settings.json"),
+      `${JSON.stringify({
+        preferences: { theme: "dark" },
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [{ type: "command", command: "skillpark hook claude" }],
+            },
+          ],
+        },
+      })}\n`,
+      "utf8",
+    );
 
     await runInstall("claude", context);
 
     await expect(
       readFile(join(customConfig, "skills", "skillpark", "SKILL.md"), "utf8"),
     ).resolves.toContain("SkillPark Read-Only Gateway");
-    expect(
-      hookCommands(await readJson(join(customConfig, "settings.json"))),
-    ).toContain("skillpark hook claude");
+    expect(await readJson(join(customConfig, "settings.json"))).toEqual({
+      preferences: { theme: "dark" },
+    });
+    await expect(
+      readFile(join(customConfig, "CLAUDE.md"), "utf8"),
+    ).resolves.toContain("host's SkillPark agent id is `claude`");
     await expect(access(join(home, ".claude"))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
 
-  it("force-replaces a different current-project skill without duplicating the hook", async () => {
+  it("removes Codex metadata from an exact legacy Claude gateway without --force", async () => {
+    const home = await makeTempHome();
+    const destination = join(home, ".claude", "skills", "skillpark");
+    await cp(bundledGatewaySkillRoot(), destination, { recursive: true });
+    const { messages, output } = captureOutput();
+
+    await runInstall("claude", createCommandContext({ homeDir: home, output }));
+
+    await expect(
+      access(join(destination, "agents", "openai.yaml")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(destination, "SKILL.md"), "utf8"),
+    ).resolves.toContain("SkillPark Read-Only Gateway");
+    expect(messages).toContain(
+      `SkillPark gateway skill is already installed for claude (global): ${destination}`,
+    );
+  });
+
+  it("force-replaces a different current-project skill without creating hooks", async () => {
     const home = await makeTempHome();
     const current = await makeTempHome();
     const skillRoot = join(current, ".claude", "skills");
@@ -468,6 +765,19 @@ describe("install command", () => {
       description: "old user-owned gateway",
     });
     await writeFile(join(destination, "owner.txt"), "replace me", "utf8");
+    await writeFile(
+      join(current, ".claude", "settings.json"),
+      `${JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [{ type: "command", command: "skillpark hook claude" }],
+            },
+          ],
+        },
+      })}\n`,
+      "utf8",
+    );
     const { messages, output } = captureOutput();
     const install = () =>
       createProgram(
@@ -489,20 +799,15 @@ describe("install command", () => {
       readFile(join(destination, "SKILL.md"), "utf8"),
     ).resolves.toContain("SkillPark Read-Only Gateway");
     expect(await readdir(skillRoot)).toEqual(["skillpark"]);
-    const configuration = await readJson(
-      join(current, ".claude", "settings.json"),
-    );
-    expect(
-      hookCommands(configuration).filter(
-        (command) => command === "skillpark hook claude",
-      ),
-    ).toHaveLength(1);
+    await expect(
+      access(join(current, ".claude", "settings.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
     expect(messages).toContain(
       `Replaced SkillPark gateway skill for claude (current): ${destination}`,
     );
   });
 
-  it("does not mistake a Windows-only command match for a complete Codex hook", async () => {
+  it("removes a legacy Windows command without deleting a different POSIX hook", async () => {
     const home = await makeTempHome();
     const configRoot = join(home, ".codex");
     const configPath = join(configRoot, "hooks.json");
@@ -529,13 +834,23 @@ describe("install command", () => {
 
     await runInstall("codex", createCommandContext({ homeDir: home }));
 
-    expect(hookCommands(await readJson(configPath))).toEqual([
-      "different-posix-command",
-      "skillpark hook codex",
-    ]);
+    expect(await readJson(configPath)).toEqual({
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "different-posix-command",
+              },
+            ],
+          },
+        ],
+      },
+    });
   });
 
-  it("rejects malformed hook config before installing the skill", async () => {
+  it("rejects malformed legacy hook config before installing the skill", async () => {
     const home = await makeTempHome();
     const destination = await createSkill(
       join(home, ".claude", "skills"),

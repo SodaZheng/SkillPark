@@ -1319,7 +1319,6 @@ describe("runAdd", () => {
       "install",
       "get",
       "search",
-      "hook",
     ]);
   });
 });

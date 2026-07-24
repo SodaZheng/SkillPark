@@ -2,8 +2,8 @@ import type { Command } from "commander";
 import { getAgentPaths, parseAgentId } from "../agents/registry.js";
 import type { AgentId } from "../domain/agents.js";
 import { UsageError } from "../domain/errors.js";
-import { gatewayContext } from "../hooks/context.js";
 import { GATEWAY_SKILL_ENTRY_NAME } from "../skills/gateway.js";
+import { renderSearchContext } from "../skills/search-context.js";
 import {
   DEFAULT_SEARCH_LIMIT,
   searchableSkillFromEntry,
@@ -75,7 +75,7 @@ export function registerSearchCommand(
           context.cwd,
           parseLimit(options.limit),
         );
-        context.output.write(gatewayContext(result.agent, result));
+        context.output.write(renderSearchContext(result.agent, result));
       },
     );
 }

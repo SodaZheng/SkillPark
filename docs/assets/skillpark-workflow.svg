@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="620" viewBox="0 0 1440 620" role="img" aria-labelledby="title desc">
+  <title id="title">SkillPark workflow</title>
+  <desc id="desc">Skills move from the active directory into a parked library. A small gateway searches a bounded candidate set and loads one matching skill on demand.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07152e"/>
+      <stop offset="0.55" stop-color="#0b2045"/>
+      <stop offset="1" stop-color="#08172e"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#172d54"/>
+      <stop offset="1" stop-color="#10203f"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6c63ff"/>
+      <stop offset="0.5" stop-color="#31c5f4"/>
+      <stop offset="1" stop-color="#42e5b4"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#020817" flood-opacity="0.55"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#45d9dc"/>
+    </marker>
+  </defs>
+
+  <rect width="1440" height="620" rx="36" fill="url(#background)"/>
+  <path d="M0 496C260 420 420 584 705 490S1180 420 1440 500V620H0Z" fill="#0c2448" opacity="0.45"/>
+  <g opacity="0.18" fill="#6de7ff">
+    <circle cx="86" cy="88" r="3"/><circle cx="126" cy="88" r="3"/><circle cx="166" cy="88" r="3"/>
+    <circle cx="1274" cy="92" r="3"/><circle cx="1314" cy="92" r="3"/><circle cx="1354" cy="92" r="3"/>
+    <circle cx="1274" cy="132" r="3"/><circle cx="1314" cy="132" r="3"/><circle cx="1354" cy="132" r="3"/>
+  </g>
+
+  <text x="720" y="64" text-anchor="middle" fill="#f5f8ff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="28" font-weight="700">A small active surface. A large on-demand library.</text>
+  <text x="720" y="98" text-anchor="middle" fill="#9fb3d7" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="17">Park → route → search → load</text>
+
+  <g transform="translate(68 154)" filter="url(#shadow)">
+    <rect width="250" height="330" rx="28" fill="url(#card)" stroke="#29456f"/>
+    <rect x="24" y="24" width="78" height="30" rx="15" fill="#6c63ff" opacity="0.2"/>
+    <text x="63" y="45" text-anchor="middle" fill="#b9b4ff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">ACTIVE</text>
+    <text x="24" y="92" fill="#f4f7ff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">Native skills</text>
+    <text x="24" y="119" fill="#91a7cc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">Always visible to the host</text>
+    <g transform="translate(24 148)">
+      <rect width="202" height="48" rx="12" fill="#203962" stroke="#3a5a87"/>
+      <circle cx="25" cy="24" r="8" fill="#8b7cff"/>
+      <rect x="45" y="16" width="96" height="7" rx="3.5" fill="#afc0dc"/>
+      <rect x="45" y="29" width="66" height="5" rx="2.5" fill="#60789e"/>
+      <rect y="62" width="202" height="48" rx="12" fill="#203962" stroke="#3a5a87"/>
+      <circle cx="25" cy="86" r="8" fill="#31c5f4"/>
+      <rect x="45" y="78" width="114" height="7" rx="3.5" fill="#afc0dc"/>
+      <rect x="45" y="91" width="78" height="5" rx="2.5" fill="#60789e"/>
+      <rect y="124" width="202" height="48" rx="12" fill="#203962" stroke="#3a5a87"/>
+      <circle cx="25" cy="148" r="8" fill="#42e5b4"/>
+      <rect x="45" y="140" width="84" height="7" rx="3.5" fill="#afc0dc"/>
+      <rect x="45" y="153" width="103" height="5" rx="2.5" fill="#60789e"/>
+    </g>
+  </g>
+
+  <path d="M330 318H418" fill="none" stroke="#45d9dc" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="341" y="275" width="68" height="28" rx="14" fill="#0b2345" stroke="#2c6380"/>
+  <text x="375" y="294" text-anchor="middle" fill="#78e4e7" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">STORE</text>
+
+  <g transform="translate(428 134)" filter="url(#shadow)">
+    <rect width="344" height="370" rx="28" fill="url(#card)" stroke="#29456f"/>
+    <rect x="24" y="24" width="82" height="30" rx="15" fill="#31c5f4" opacity="0.18"/>
+    <text x="65" y="45" text-anchor="middle" fill="#70ddff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">PARKED</text>
+    <text x="24" y="92" fill="#f4f7ff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">Local skill library</text>
+    <text x="24" y="119" fill="#91a7cc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">~/.skillpark/skills/&lt;agent&gt;</text>
+    <g transform="translate(24 148)">
+      <g fill="#1d355c" stroke="#35557f">
+        <rect x="0" y="0" width="86" height="74" rx="14"/><rect x="98" y="0" width="86" height="74" rx="14"/><rect x="196" y="0" width="86" height="74" rx="14"/>
+        <rect x="0" y="86" width="86" height="74" rx="14"/><rect x="98" y="86" width="86" height="74" rx="14"/><rect x="196" y="86" width="86" height="74" rx="14"/>
+        <rect x="0" y="172" width="86" height="42" rx="14"/><rect x="98" y="172" width="86" height="42" rx="14"/><rect x="196" y="172" width="86" height="42" rx="14"/>
+      </g>
+      <g fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M30 38l10-12 16 19" stroke="#8b7cff"/><path d="M128 44h26M141 31v26" stroke="#31c5f4"/><path d="M226 30h26v26h-26z" stroke="#42e5b4"/>
+        <circle cx="43" cy="123" r="14" stroke="#31c5f4"/><path d="M127 121l13-13 13 13-13 13z" stroke="#8b7cff"/><path d="M226 136l13-27 13 27z" stroke="#42e5b4"/>
+      </g>
+      <g fill="#5f789e">
+        <rect x="20" y="188" width="46" height="7" rx="3.5"/><rect x="118" y="188" width="46" height="7" rx="3.5"/><rect x="216" y="188" width="46" height="7" rx="3.5"/>
+      </g>
+    </g>
+  </g>
+
+  <path d="M784 318H884" fill="none" stroke="#45d9dc" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="796" y="275" width="76" height="28" rx="14" fill="#0b2345" stroke="#2c6380"/>
+  <text x="834" y="294" text-anchor="middle" fill="#78e4e7" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">SEARCH</text>
+
+  <g transform="translate(894 176)" filter="url(#shadow)">
+    <rect width="178" height="286" rx="28" fill="#102341" stroke="#3380a0"/>
+    <circle cx="89" cy="77" r="42" fill="#123657" stroke="#42d8df" stroke-width="3" filter="url(#glow)"/>
+    <circle cx="89" cy="77" r="15" fill="#64eff0"/>
+    <path d="M89 39V27M89 127v-12M51 77H39M139 77h-12" stroke="#77eff1" stroke-width="4" stroke-linecap="round"/>
+    <text x="89" y="151" text-anchor="middle" fill="#f4f7ff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="700">Gateway</text>
+    <text x="89" y="178" text-anchor="middle" fill="#91a7cc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">bounded metadata</text>
+    <g transform="translate(27 207)">
+      <rect width="124" height="42" rx="12" fill="#19365b" stroke="#2d587b"/>
+      <circle cx="22" cy="21" r="7" fill="#42e5b4"/>
+      <rect x="40" y="14" width="62" height="6" rx="3" fill="#b7c7df"/>
+      <rect x="40" y="25" width="42" height="5" rx="2.5" fill="#60789e"/>
+    </g>
+  </g>
+
+  <path d="M1084 318H1172" fill="none" stroke="#45d9dc" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="1093" y="275" width="68" height="28" rx="14" fill="#0b2345" stroke="#2c6380"/>
+  <text x="1127" y="294" text-anchor="middle" fill="#78e4e7" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700">LOAD</text>
+
+  <g transform="translate(1182 194)" filter="url(#shadow)">
+    <rect width="190" height="250" rx="28" fill="url(#card)" stroke="#38765f"/>
+    <rect x="24" y="24" width="142" height="150" rx="18" fill="#193a4d" stroke="#42e5b4" stroke-width="2"/>
+    <path d="M48 59h70M48 81h94M48 103h76M48 125h88" stroke="#a9bed6" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="143" cy="146" r="28" fill="#154c46" stroke="#42e5b4" stroke-width="2" filter="url(#glow)"/>
+    <path d="M132 146l8 8 15-18" fill="none" stroke="#79f4cd" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="95" y="210" text-anchor="middle" fill="#f4f7ff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">One exact skill</text>
+    <text x="95" y="233" text-anchor="middle" fill="#91a7cc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">still parked</text>
+  </g>
+
+  <rect x="464" y="533" width="512" height="44" rx="22" fill="#0b1b36" stroke="#254b70"/>
+  <text x="720" y="561" text-anchor="middle" fill="#a8bad6" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">Full catalog omitted · metadata candidates only · instructions loaded on demand</text>
+</svg>

@@ -2,400 +2,266 @@
 
 # SkillPark
 
-**让 Agent 拥有很大的技能库，同时保持很小的工作上下文。**
+**保留庞大的技能库，同时不让完整目录长期占用 Agent 上下文。**
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
 [![npm version](https://img.shields.io/npm/v/skillpark?color=2563EB)](https://www.npmjs.com/package/skillpark)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-339933.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22C55E.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6.svg)](https://www.typescriptlang.org/)
 
 </div>
 
-![SkillPark 为 AI Agent 检索少量停放技能](docs/assets/skillpark-hero.png)
+![SkillPark 用一个小型检索网关管理庞大的本地技能库](docs/assets/skillpark-hero.png)
 
-SkillPark 是一个本地运行的开源 CLI，用来统一管理多个 AI 编程 Agent 的技能。它把不常用
-的技能移出 Agent 的常规发现目录，根据请求在本地检索停放技能的元数据，并且只加载真正
-匹配当前任务的少量技能。
+SkillPark 是一个本地、开源的 CLI。它把 AI Agent 的低频技能移出常规发现目录，只在任务真正
+需要时读取对应的技能说明。
 
-它把问题拆成三个彼此独立的部分：**保存大量技能、只暴露一个轻量搜索入口、仅在需要时
-加载完整指令。**
+你只需要让 Agent 常驻一个很小的 `skillpark` 网关，其余技能保存在 `~/.skillpark`。
+网关会检索停放技能的元数据，并按需读取一个准确匹配的技能。
 
-## 为什么需要 SkillPark？
+## 核心模型
 
-AI Agent 通常会扫描一个或多个活动技能目录来发现技能。当技能数量较少时，这种方式非常
-直接；但随着技能库增长，每个始终可见的技能描述都会占用上下文并参与选择，即使大部分
-技能与当前请求完全无关。
+![SkillPark 工作流：停放低频技能，检索少量候选，再按需加载一个技能](docs/assets/skillpark-workflow.svg)
 
-SkillPark 围绕三个目标设计：
+1. **停放**：把低频技能移出 Agent 的活动技能目录。
+2. **路由**：只让一个小型网关技能和简洁的路由引导保持可见。
+3. **检索**：从停放技能的元数据中返回有限候选；默认最多 5 个。
+4. **加载**：读取选中技能的 `SKILL.md` 及其附带文件，但不把它恢复到活动目录。
 
-1. **减少常驻技能上下文。** 把非活跃技能停放到 Agent 原生发现路径之外。
-2. **保留按需访问能力。** 在本地检索元数据，由宿主模型验证有界结果，并在需要时只扩展一次关键词。
-3. **让用户掌握控制权。** 文件系统操作透明，提供交互选择、冲突检查和可恢复事务。
-
-| 不使用 SkillPark | 使用 SkillPark |
-| --- | --- |
-| 每轮都可能发现所有活动技能 | 常驻的只有轻量 SkillPark 网关 |
-| 完整技能目录都可能参与选择 | 本地搜索默认最多返回 5 个结果 |
-| 需要手动移除、重新放回技能 | 用同一个 CLI 停放、恢复、新增和检查技能 |
-| 需要手工维护不同 Agent 的 Hook 配置 | 对支持的 Agent 使用原生适配器合并只读 Hook |
-
-## 主要功能
-
-- **按需加载** — 停放技能不会进入 Agent 的原生扫描，只有被选中时才读取完整指令。
-- **模型引导的本地搜索** — 宿主模型提供简洁能力词并补充中英文等价表达；本地 BM25 负责
-  Unicode 分词、CJK 双字组、英文词干、前缀和保守拼写纠错，不需要模型权重。
-- **有界上下文** — 不把完整目录交给 Agent；搜索默认最多返回 5 条元数据，最终仍由宿主模型
-  应用原生 Skill 触发规则。
-- **73 个内置目标 + 自定义 Agent** — 既可使用内置路径，也可显式传入新 id 使用约定式
-  Skill 与 Hook 路径。
-- **原生 Prompt Hook** — 内置 Claude Code、Codex、Gemini CLI、Qwen Code 和 GitHub
-  Copilot 适配器。
-- **完整技能生命周期** — 支持从本地或 Git 来源新增技能、停放、恢复、查看目录以及精确加载
-  单个技能。
-- **安全的文件系统操作** — 名称冲突保护、路径边界检查、事务日志、失败回滚以及中断后的
-  守护式恢复。
-- **友好的终端交互** — 优先显示已检测到的 Agent，并为 Agent、技能和安装范围提供可搜索的
-  键盘选择器。
-
-## 工作原理
-
-1. 技能保存在 `~/.skillpark/skills/<agent>/`，位于该 Agent 的活动发现目录之外。
-2. 原生 Prompt Hook 先执行一次本地词法搜索；没有原生适配器时，网关让宿主模型生成简洁
-   的关键词查询。
-3. 本地字段加权 BM25 最多返回 5 条元数据，只召回候选，不判断 Skill 是否适用。
-4. 宿主模型应用原生 Skill 触发规则；如果结果都不适用，可以用同义词和中英文等价能力词
-   再精炼搜索一次。
-5. 网关通过 `skillpark get <agent> <entryName>` 精确加载最终匹配项；Skill 仍保持停放状态。
-
-整个过程不依赖远程搜索服务、embedding 模型或目录数据库。只有在你明确新增 Git 来源时才需要 Git 网络访问。
-
-## 环境要求
-
-- Node.js 22 或更高版本
-- npm（用于全局安装）
-- 仅从 Git 仓库新增技能时需要 Git
-
-## 自定义 Agent
-
-显式传入一个未知 Agent id 时，SkillPark 会把它作为自定义 Agent。例如：
-
-```bash
-skillpark install sodagent
-skillpark store sodagent
-```
-
-id 只能由小写字母、数字和分隔它们的单个连字符组成；输入会统一转成小写。SkillPark 使用
-以下约定：
-
-| 资源 | 全局 | 当前项目 |
-| --- | --- | --- |
-| 活动 Skills | `~/.sodagent/skills/` | `./.sodagent/skills/` |
-| 网关 Skill | `~/.sodagent/skills/skillpark/` | `./.sodagent/skills/skillpark/` |
-| Hook 配置 | `~/.sodagent/settings.json` | `./.sodagent/settings.json` |
-| 停放 Skills | `~/.skillpark/skills/sodagent/` | 共用同一个全局仓库 |
-
-自定义 Agent 使用分组 JSON `UserPromptSubmit` Hook 协议。宿主必须支持该协议，并能发现
-`skills/*/SKILL.md`；否则文件仍会安装，但宿主不会消费它们。自定义 id 只支持显式传入，
-不会加入内置 Agent 的交互选择器。`list`、`restore`、`search` 和 `get` 同样接受该 id。
-
-## 自定义 Agent 配置目录
-
-SkillPark 会读取 Agent 自己的配置目录环境变量，因此自定义的全局技能目录和 Hook 配置不会
-被误写回默认的 home 目录：
-
-| Agent | 原生环境变量 | SkillPark 解析结果 |
-| --- | --- | --- |
-| Claude Code | `CLAUDE_CONFIG_DIR` | `<value>/skills`、`<value>/settings.json` |
-| Codex | `CODEX_HOME` | `<value>/skills`、`<value>/hooks.json` |
-| Gemini CLI | `GEMINI_CLI_HOME` | `<value>/.gemini/skills`、`<value>/.gemini/settings.json` |
-| Qwen Code | `QWEN_HOME` | `<value>/skills`、`<value>/settings.json` |
-
-所有支持的 Agent 还可以使用统一覆盖变量
-`SKILLPARK_<AGENT_ID>_CONFIG_DIR`；其中 Agent id 转成大写，并把连字符替换为下划线。例如：
-
-```bash
-export SKILLPARK_CLAUDE_CONFIG_DIR=~/home/soda/.claude
-export SKILLPARK_GITHUB_COPILOT_CONFIG_DIR=/mnt/agent-config/copilot
-skillpark agents
-```
-
-显式自定义 id 也支持同样的覆盖方式，例如
-`SKILLPARK_SODAGENT_CONFIG_DIR=/mnt/agent-config/sodagent skillpark install sodagent`。
-
-统一覆盖变量直接指向该 Agent 的配置根目录。SkillPark 会保留目标原有的技能子目录布局；
-例如 AstrBot 仍使用 `<config>/data/skills`。对于默认位于 `~/.config` 下的目标，SkillPark
-也会识别 `XDG_CONFIG_HOME`。优先级为 SkillPark 专用覆盖、Agent 原生变量、
-`XDG_CONFIG_HOME`、默认 home 路径。`~` 会按当前用户 home 展开，相对路径按当前工作目录
-解析。
-
-自定义配置根目录必须已经存在且是普通目录，不能是符号链接。项目级技能路径和
-`~/.skillpark/skills/<agent>/` 停放目录不受这些变量影响。
-
-## 安装
-
-```bash
-npm install -g skillpark
-```
-
-安装后可以使用两个等价的命令名：
-
-```bash
-skillpark --version
-spk --version
-```
+停放技能仍然是普通的本地文件夹。SkillPark 不运行服务，也不会上传技能目录。
 
 ## 快速开始
 
-### 1. 查看可用的 Agent
+### 1. 安装 CLI
+
+```bash
+npm install --global skillpark
+```
+
+SkillPark 需要 Node.js 22 或更高版本。`spk` 是 `skillpark` 的短命令别名。
+
+### 2. 找到 Agent id
 
 ```bash
 skillpark agents
 ```
 
-已经检测到的 Agent 会优先显示。表格还会列出可接受的 Agent id、原生 Hook 支持情况、
-活动目录和停放目录。
+已检测到的 Agent 会排在前面。输出还会显示可用 id、活动技能目录、停放目录和上下文集成方式。
 
-### 2. 把技能放进停车场
-
-停放某个 Agent 当前已经激活的技能：
+### 3. 停放不需要长期可见的技能
 
 ```bash
 skillpark store codex
 ```
 
-也可以从本地目录或 Git 仓库直接把技能加入 SkillPark：
+在交互界面中选择技能并确认移动。请把 `codex` 替换成 `skillpark agents` 显示的 id。
 
-```bash
-skillpark add ./my-skills
-skillpark add owner/repository
-skillpark add https://github.com/owner/repository.git
-```
-
-`add` 会先询问目标 Agent，再让你选择来源中发现的技能。活动目录或停放目录中存在同名
-目录时，SkillPark 不会覆盖它。
-
-### 3. 安装网关
+### 4. 安装 SkillPark 网关
 
 ```bash
 skillpark install codex
 ```
 
-在交互界面中选择 `Global` 或 `Current project`。SkillPark 会安装一个很小的只读网关技能；
-如果所选 Agent 有原生适配器，还会合并对应的 Prompt Hook。
+选择全局或当前项目范围。SkillPark 会安装：
 
-### 4. 继续正常提问
+- 位于所选活动技能目录中的只读 `skillpark` 网关；
+- 位于宿主持久上下文文件中的带标记路由区块。
 
-安装 Hook 后，普通请求会自动搜索。也可以手动检查搜索结果：
+路由区块会与现有文件合并；标记之外的用户内容不会被改写。
 
-```bash
-skillpark search codex "电子表格 工作簿 spreadsheet Excel XLSX"
-skillpark search codex --limit 1 "合同 文档 contract Word DOCX"
-```
+### 5. 继续正常提问
 
-或者显式调用某个停放技能：
+你不需要预先知道停放技能的名称。当专业说明可能有帮助时，宿主会被引导去调用网关、检索少量
+候选、验证匹配条件，并只加载最终选中的技能。
+
+例如：
 
 ```text
-# Codex
-$skillpark documents create a contract draft
-
-# Claude Code
-/skillpark /documents create a contract draft
+请根据这份表格制作一份精美的季度报告。
 ```
 
-对于 `skillpark get`，`/documents` 前面的斜杠可以省略；网关会在加载精确目录项前完成归一化。
+内部只读流程相当于：
 
-## 命令参考
+```bash
+skillpark search codex "spreadsheet quarterly report workbook 表格 季度报告"
+skillpark get codex "spreadsheets"
+```
+
+`search` 返回的是候选，而不是自动选择结果。网关仍会按宿主正常的技能触发规则判断，再调用
+`get`。
+
+## 命令
 
 | 命令 | 用途 |
 | --- | --- |
-| `skillpark agents` | 列出内置 Agent、检测状态、路径和 Hook 支持情况 |
-| `skillpark add <source>` | 在本地或 Git 来源中发现技能，并把选中的技能复制到选定 Agent 的停放目录 |
-| `skillpark store [agent]` | 把选中的活动技能移动到该 Agent 的停放目录 |
-| `skillpark restore [agent]` | 把选中的停放技能移回该 Agent 的活动目录 |
-| `skillpark list [agent]` | 列出活动与停放技能、名称冲突和元数据警告 |
-| `skillpark list [agent] --parked` | 只显示停放技能 |
-| `skillpark list [agent] -q <query>` | 过滤当前显示的目录 |
-| `skillpark install [agent]` | 安装网关技能及对应的内置或自定义 Hook |
-| `skillpark install [agent] --force` | 只原子替换冲突的网关技能；Hook 设置仍然采用合并方式 |
-| `skillpark search <agent> "<keywords>"` | 不加载技能，仅搜索停放 Skill 元数据 |
-| `skillpark search <agent> --limit <1-10> "<keywords>"` | 修改有界搜索结果的最大数量 |
-| `skillpark get [agent] <skill>` | 输出一个停放技能的根目录、指令文件路径和完整 `SKILL.md` |
+| `skillpark agents` | 查看支持的 Agent、检测状态、路径和上下文集成 |
+| `skillpark add <source>` | 从本地目录或 Git 仓库复制技能到停车场 |
+| `skillpark store [agent]` | 把选中的活动技能移动到停车场 |
+| `skillpark restore [agent]` | 把选中的停放技能移回活动目录 |
+| `skillpark list [agent]` | 查看活动技能和停放技能 |
+| `skillpark list [agent] --parked` | 只查看停放技能 |
+| `skillpark list [agent] -q "<关键词>"` | 按目录名、技能名和描述过滤 |
+| `skillpark search <agent> "<关键词>"` | 检索停放元数据；可用 `--limit 1..10` 修改结果上限 |
+| `skillpark get [agent] <skill>` | 输出一个技能的根目录、说明文件路径和 `SKILL.md` |
+| `skillpark install [agent]` | 安装或刷新网关与路由引导 |
+| `skillpark install [agent] --force` | 验证后替换冲突的网关目录 |
 
-交互命令省略 Agent 参数时，SkillPark 会要求你进行选择；脚本和自动化仍可显式传入 Agent id，
-自定义 Agent 必须显式传入。
+省略可选 Agent 参数时，命令会要求你进行选择。脚本和自动化应显式传入 id。
 
-## 支持的技能来源
+## 从其他来源添加技能
 
-`skillpark add` 接受以下来源：
+`add` 会扫描来源的暂存副本，让你先选择一个或多个目标 Agent，再选择需要复制的技能。
 
 ```bash
-# 本地目录
-skillpark add ./skills
+# 本地技能或仓库
+skillpark add ./my-skills
 
 # GitHub 简写
 skillpark add owner/repository
 
-# HTTPS、SSH URL 或 SCP 风格 Git URL
+# HTTPS、SSH 或 SCP 风格 Git URL
 skillpark add https://github.com/owner/repository.git
 skillpark add git@github.com:owner/repository.git
 ```
 
-SkillPark 会识别来源根目录中的技能，也会扫描 `skills/`、`.claude/skills/`、
-`.agents/skills/` 和 `.codex/skills/` 等常见容器。合法技能必须是一个包含 `SKILL.md` 的
-目录，并且文件的 YAML frontmatter 中要有非空的 `name` 与 `description`。
+有效技能必须是包含有效 `SKILL.md` 的目录。SkillPark 会发现：
 
-## 支持的 Agent
+- 来源根目录中的技能；
+- `skills/` 的直接子目录；
+- `.agents/skills/`、`.claude/skills/` 和 `.codex/skills/` 的直接子目录。
 
-SkillPark 当前定义了 73 个内置 Agent 目标，并接受约定式自定义 id。`claude-code` 是
-`claude` 的别名。Eve 和 PromptScript 仅支持项目范围；其他内置目标使用各自 Agent 定义中
-声明的技能根目录。
+名称冲突会在确认前显示，并且不会被覆盖。
 
-<details>
-<summary>展开全部 Agent id</summary>
+## 路由如何工作
+
+安装后的上下文区块会告诉宿主何时调用 `skillpark` 网关，例如：用户点名技能、任务进入专业领域、
+最佳工作流不明确，或者执行中出现了新的能力需求。
+
+网关随后执行只读流程：
+
+1. 生成简短的能力关键词。
+2. 运行 `skillpark search <agent> "<query>"`。
+3. 把结果视为不受信任的检索候选。
+4. 只选择触发条件与当前任务相符的候选。
+5. 对准确的目录名运行 `skillpark get <agent> "<entryName>"`。
+6. 读取并遵循该技能，同时让它继续保持停放状态。
+
+检索会对目录名、显示名称、可选关键词和正向描述进行字段加权的词法排序。它支持 Unicode 分词、
+CJK 词项、英文词干、前缀和保守的拼写纠错。
+
+路由由说明驱动：宿主必须支持技能，并遵循它的持久上下文文件。SkillPark 不会向模型请求注入
+可执行代码。
+
+## Agent 支持
+
+SkillPark 内置了许多兼容 Skills 的编程 Agent 定义。请运行 `skillpark agents` 获取当前版本
+的准确列表，不要从静态清单复制路径。
+
+最常用的 id 如下：
+
+| 宿主 | Agent id | 原生上下文文件 |
+| --- | --- | --- |
+| Claude Code | `claude` | `CLAUDE.md` |
+| Codex | `codex` | `AGENTS.md` |
+| Gemini CLI | `gemini-cli` | `GEMINI.md` |
+| GitHub Copilot | `github-copilot` | `copilot-instructions.md` |
+| Qwen Code | `qwen-code` | `QWEN.md` |
+
+其他内置 Agent 会使用各自已知的技能目录和 `AGENTS.md` 兼容文件。只有读取该约定的宿主才会
+采用这份回退引导。
+
+### 自定义 Agent
+
+无需修改 SkillPark，就可以使用遵循约定的自定义 id：
+
+```bash
+skillpark store sodagent
+skillpark install sodagent
+```
+
+自定义 id 由小写字母、数字和单个连字符组成，最长 64 个字符。
+
+| 位置 | 默认路径 |
+| --- | --- |
+| 全局活动技能 | `~/.sodagent/skills/` |
+| 当前项目技能 | `./.sodagent/skills/` |
+| 停放技能 | `~/.skillpark/skills/sodagent/` |
+| 全局上下文引导 | `~/.sodagent/AGENTS.md` |
+| 当前项目上下文引导 | `./AGENTS.md` |
+
+自定义宿主必须理解这些技能路径；如需路由引导，还必须读取 `AGENTS.md` 约定。
+
+### 配置目录覆盖
+
+SkillPark 会读取常见宿主的原生配置变量：
+
+| Agent | 变量 |
+| --- | --- |
+| Claude Code | `CLAUDE_CONFIG_DIR` |
+| Codex | `CODEX_HOME` |
+| Gemini CLI | `GEMINI_CLI_HOME` |
+| GitHub Copilot | `COPILOT_HOME` |
+| Qwen Code | `QWEN_HOME` |
+
+任何内置或自定义 id 也可以使用
+`SKILLPARK_<NORMALIZED_AGENT_ID>_CONFIG_DIR`；连字符需要改成下划线：
+
+```bash
+SKILLPARK_SODAGENT_CONFIG_DIR=/mnt/agent-config/sodagent \
+  skillpark install sodagent
+```
+
+相对路径和以 `~` 开头的值会先完成解析。默认全局目录位于 `~/.config` 下的 Agent 也会遵循
+`XDG_CONFIG_HOME`。
+
+## 本地数据与安全
+
+停放目录位于：
 
 ```text
-aider-desk amp antigravity antigravity-cli astrbot autohand-code augment bob
-claude openclaw cline codearts-agent codebuddy codemaker codestudio codex
-command-code continue cortex crush cursor deepagents devin dexto droid eve
-firebender forgecode gemini-cli github-copilot goose hermes-agent inference-sh
-jazz junie iflow-cli kilo kimi-code-cli kiro-cli kode lingma loaf mcpjam
-mistral-vibe moxby mux opencode openhands ona pi qoder qoder-cn qwen-code replit
-reasonix rovodev roo tabnine-cli terramind tinycloud trae trae-cn warp windsurf
-zed zcode zencoder zenflow neovate pochi promptscript adal universal
+~/.skillpark/skills/<agent>/
 ```
 
-</details>
+SkillPark 会谨慎处理文件系统变更：
 
-## 原生 Hook 支持
+- `store`、`restore` 和 `add` 会显示计划并要求确认。
+- 修改操作使用事务日志，并能恢复被中断的任务。
+- 来源根目录、目标目录、目录身份和符号链接边界都会接受验证。
+- 已存在的活动或停放名称不会被静默覆盖。
+- `install --force` 只作用于发生冲突的 `skillpark` 网关目录。
+- 检索不会输出完整目录，并会截断返回的元数据。
 
-| Agent | 事件 | 全局配置 | 项目配置 |
-| --- | --- | --- | --- |
-| Claude Code | `UserPromptSubmit` | `~/.claude/settings.json` | `./.claude/settings.json` |
-| Codex | `UserPromptSubmit` | `~/.codex/hooks.json` | `./.codex/hooks.json` |
-| Gemini CLI | `BeforeAgent` | `~/.gemini/settings.json` | `./.gemini/settings.json` |
-| Qwen Code | `UserPromptSubmit` | `~/.qwen/settings.json` | `./.qwen/settings.json` |
-| GitHub Copilot | `userPromptTransformed` | `~/.copilot/settings.json` | `./.github/copilot/settings.json` |
-| 自定义 `<agent>` | `UserPromptSubmit` | `~/.<agent>/settings.json` | `./.<agent>/settings.json` |
-
-对于没有适配器的内置 Agent，`install` 只安装网关技能并跳过 Hook 配置。显式传入自定义
-Agent 表示选择上述通用协议；SkillPark 不会把它作为内置目标的兜底格式。
-
-Hook 安装是幂等的：已有设置和无关 Hook 分组都会保留；无效 JSON 会被拒绝，而不是被
-覆盖。请确保全局安装的 `skillpark` 命令位于 Agent 进程的 `PATH` 中。Hook 会在运行时解析
-该命令，因此 CLI 升级后不会留下过期的绝对可执行路径。
-
-> Codex 可能会要求你通过 `/hooks` 检查并信任新安装的 Hook；项目 Hook 还要求当前项目
-> 本身处于受信任状态。
-
-## 网关安装路径
-
-下面是部分代表性路径。停放技能始终位于 `~/.skillpark/skills/<agent>/`。
-
-| Agent | 范围 | 网关技能路径 |
-| --- | --- | --- |
-| Claude Code | 全局 | `~/.claude/skills/skillpark/` |
-| Claude Code | 当前项目 | `./.claude/skills/skillpark/` |
-| Codex | 全局 | `~/.codex/skills/skillpark/` |
-| Codex | 当前项目 | `./.agents/skills/skillpark/` |
-| Gemini CLI | 全局 | `~/.gemini/skills/skillpark/` |
-| Gemini CLI | 当前项目 | `./.agents/skills/skillpark/` |
-| Qwen Code | 全局 | `~/.qwen/skills/skillpark/` |
-| Qwen Code | 当前项目 | `./.qwen/skills/skillpark/` |
-| GitHub Copilot | 全局 | `~/.copilot/skills/skillpark/` |
-| GitHub Copilot | 当前项目 | `./.agents/skills/skillpark/` |
-| 自定义 `<agent>` | 全局 | `~/.<agent>/skills/skillpark/` |
-| 自定义 `<agent>` | 当前项目 | `./.<agent>/skills/skillpark/` |
-
-SkillPark 没有 `--current` 参数，安装范围需要在交互界面中选择。`--force` 只作用于网关技能
-目录，不会覆盖其他 Hook 设置。
-
-## 搜索行为
-
-本地搜索是确定性且离线的。字段加权 BM25 检索 Skill 名称、可选关键词和描述中的正向语句；
-Unicode 分词、CJK 双字组、英文词干、前缀和保守拼写纠错提供轻量词法召回。它不依赖手工维护
-的能力 ontology，也不会下载 embedding 模型。
-
-语义层由宿主大模型承担：模型把请求改写为 3～8 个能力词，保留格式和产品名，并在语言可能
-遮蔽匹配时补充简短的中英文等价词。Hook 输出算第一次搜索，模型最多再精炼一次，因此每个
-请求最多执行两次有界搜索。搜索分数只代表检索相关度，是否加载仍由模型按原生 Skill 触发规则
-决定。
-
-精确的 `$name` 和 `/name` 调用排在最前；只出现在 `Do not use`、`Not for`、`不适用` 等排除
-语句中的词不会进入索引。没有结果时 Hook 只返回一个短标记，不会输出目录；结果元数据始终按
-不可信输入处理。
-
-Skill 作者可以添加可选搜索关键词，而不必修改展示描述：
-
-```yaml
----
-name: documents
-description: Create and edit Word documents.
-search:
-  keywords:
-    - 写合同
-    - contract drafting
----
-```
-
-## 安全与隐私
-
-- **本地优先：** 目录扫描和词法搜索都在本机完成。
-- **只读 Hook 边界：** 已安装的 Hook 只搜索元数据并输出加载指令，不会运行 `store`、
-  `restore`、`add` 或 `install`。
-- **禁止静默覆盖：** 移动或复制前会禁用活动目录和停放目录中的同名冲突项。
-- **守护式路径检查：** 敏感文件操作前会验证来源与目标边界、目录项名称、符号链接和物理
-  对象身份。
-- **可恢复修改：** 事务进行期间，短生命周期日志会保存在
-  `~/.skillpark/.transactions/`；事务完成后即删除。
-- **保守恢复：** 如果所有权或路径证据发生变化，SkillPark 会停止并要求手动清理，而不是
-  删除未经验证的路径。
-
-## 键盘操作
-
-| 按键 | 操作 |
-| --- | --- |
-| 上 / 下 | 移动选中项 |
-| Space | 切换当前选项 |
-| `a` | 选择或清空当前可见的全部选项 |
-| `/` | 搜索选项 |
-| Enter | 继续 |
-| Escape 或 Ctrl+C | 安全取消 |
-
-设置 `NO_COLOR=1` 可以关闭终端颜色。
+本地操作不会离开当前机器。只有在你明确添加远程 Git 来源或安装 npm 包时才会访问网络。
 
 ## 本地开发
 
 ```bash
 git clone https://github.com/SodaZheng/SkillPark.git
 cd SkillPark
-corepack enable
-pnpm install
-pnpm build
+npm install
+
+npm run build
+npm test
+npm run test:e2e
+npm run check
 ```
 
-常用检查命令：
+常用脚本：
 
-```bash
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-
-# 运行完整验证流程
-pnpm check
-```
+| 脚本 | 检查内容 |
+| --- | --- |
+| `npm run format:check` | 格式 |
+| `npm run lint` | Biome lint 规则 |
+| `npm run typecheck` | TypeScript 类型 |
+| `npm test` | 单元与集成测试 |
+| `npm run test:e2e` | 构建后 CLI 行为 |
+| `npm run check` | 完整验证流程 |
 
 ## 参与贡献
 
-欢迎提交 Issue 和 Pull Request。报告 Bug 时，请附上 Agent id、执行命令、预期行为、实际
-输出、操作系统和 Node.js 版本。提交 Pull Request 前请运行 `pnpm check`。
-
-- [报告问题或提出功能建议](https://github.com/SodaZheng/SkillPark/issues)
-- [查看源码仓库](https://github.com/SodaZheng/SkillPark)
+欢迎提交 Issue 和 Pull Request。提交变更前请运行 `npm run check`。
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 Soda
+[MIT](LICENSE)

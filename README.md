@@ -2,421 +2,275 @@
 
 # SkillPark
 
-**Keep your agent's skill catalog large, while keeping its working context small.**
+**Keep a large skill library without keeping the whole catalog in your agent's context.**
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
 [![npm version](https://img.shields.io/npm/v/skillpark?color=2563EB)](https://www.npmjs.com/package/skillpark)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-339933.svg)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22C55E.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6.svg)](https://www.typescriptlang.org/)
 
 </div>
 
-![SkillPark searches a small set of parked skills for an AI agent](docs/assets/skillpark-hero.png)
+![SkillPark keeps a large local skill library behind a small retrieval gateway](docs/assets/skillpark-hero.png)
 
-SkillPark is a local, open-source CLI for managing skills across AI coding agents. It moves
-rarely needed skills outside each agent's normal discovery path, searches parked metadata for every
-request, and lets the host model load only the small set that genuinely matches the task.
+SkillPark is a local, open-source CLI for parking AI-agent skills outside their normal discovery
+directories and loading the right instructions only when a task needs them.
 
-The result is a simple separation of concerns: **store many skills, expose a tiny search gateway,
-and load instructions only when they are needed.**
+You keep one small `skillpark` gateway visible to the agent. The rest of the library stays under
+`~/.skillpark`, where the gateway can search its metadata and read one exact skill on demand.
 
-## Why SkillPark?
+## The model
 
-AI agents normally discover skills by scanning one or more active skill directories. That works
-well with a small catalog. As the catalog grows, however, every always-visible skill description
-competes for context and selection attention—even when most skills are irrelevant to the current
-request.
+![SkillPark workflow: park inactive skills, search a bounded candidate set, and load one skill on demand](docs/assets/skillpark-workflow.svg)
 
-SkillPark is built around three goals:
+1. **Park** — move rarely used skills out of an agent's active skill directory.
+2. **Route** — keep one small gateway skill and concise routing guidance visible to the host.
+3. **Search** — retrieve a bounded candidate set from parked metadata. The default limit is 5.
+4. **Load** — read the selected `SKILL.md` and its bundled files without restoring the skill.
 
-1. **Reduce always-visible skill context.** Park inactive skills outside native discovery paths.
-2. **Preserve on-demand access.** Search metadata locally, then let the host model validate a
-   bounded hit set and refine the keywords once when needed.
-3. **Keep control with the user.** Use transparent filesystem operations, interactive selection,
-   conflict checks, and recoverable transactions.
-
-| Without SkillPark | With SkillPark |
-| --- | --- |
-| Every active skill can be discovered on every turn | Only the SkillPark gateway stays visible |
-| The full catalog may compete for selection | Local search returns at most 5 hits by default |
-| Skills must be manually removed and re-added | Skills can be parked, restored, added, and inspected from one CLI |
-| Host-specific hook configuration is manual | Native adapters merge read-only hooks for supported agents |
-
-## Main features
-
-- **On-demand loading** — parked skills remain out of the agent's native scan until selected.
-- **Model-guided local search** — the host model supplies concise capability keywords and can add
-  Chinese-English equivalents; local BM25 handles Unicode, CJK bigrams, English stemming, prefixes,
-  and conservative typo matching without a model weight.
-- **Bounded context** — the full catalog is omitted; search returns at most 5 metadata hits by
-  default, and the host model still applies native skill-trigger rules.
-- **73 built-in targets plus custom agents** — use the catalog defaults or pass a new agent id to
-  use convention-based skill and hook paths.
-- **Native prompt hooks** — adapters for Claude Code, Codex, Gemini CLI, Qwen Code, and GitHub
-  Copilot.
-- **Complete skill lifecycle** — add from local or Git sources, park active skills, restore parked
-  skills, inspect inventory, and load one exact skill.
-- **Safe filesystem operations** — name-conflict protection, path-boundary checks, transaction
-  journals, rollback, and guarded recovery after interruption.
-- **Friendly terminal UI** — detected agents are shown first, with searchable keyboard-driven
-  selectors for agents, skills, and installation scope.
-
-## How it works
-
-1. Skills are stored under `~/.skillpark/skills/<agent>/`, outside that agent's active discovery
-   directory.
-2. A native prompt hook performs the first local lexical search. Without a native adapter, the
-   installed gateway asks the host model to generate a concise keyword query.
-3. Local field-weighted BM25 returns at most 5 metadata hits. It retrieves candidates but does not
-   claim that a skill applies.
-4. The host model applies native skill-trigger rules. If no hit truly applies, it may run one
-   refined search with capability synonyms and compact Chinese-English equivalents.
-5. The gateway loads an exact match with `skillpark get <agent> <entryName>`. The selected
-   `SKILL.md` is used for the current task while the skill remains parked.
-
-No remote search service, embedding model, or catalog database is involved. Git is used only when you explicitly
-add a Git source.
-
-## Requirements
-
-- Node.js 22 or later
-- npm (for global installation)
-- Git only when adding skills from Git repositories
-
-## Custom agents
-
-An explicit, unknown agent id is treated as a custom agent. For example:
-
-```bash
-skillpark install sodagent
-skillpark store sodagent
-```
-
-The id must contain lowercase letters and numbers separated by single hyphens; input is normalized
-to lowercase. SkillPark uses these conventions:
-
-| Resource | Global | Current project |
-| --- | --- | --- |
-| Active skills | `~/.sodagent/skills/` | `./.sodagent/skills/` |
-| Gateway skill | `~/.sodagent/skills/skillpark/` | `./.sodagent/skills/skillpark/` |
-| Hook configuration | `~/.sodagent/settings.json` | `./.sodagent/settings.json` |
-| Parked skills | `~/.skillpark/skills/sodagent/` | same global inventory |
-
-Custom agents use the grouped JSON `UserPromptSubmit` hook protocol. The agent must support that
-protocol and discover `skills/*/SKILL.md`; otherwise the files are installed but the host will not
-consume them. Custom ids are explicit-only and are not added to the built-in interactive agent
-picker. `list`, `restore`, `search`, and `get` accept the same custom id.
-
-## Custom agent config directories
-
-SkillPark reads the agents' own config-directory environment variables, so a
-custom global skill root and hook configuration are not written back to the
-default home directory:
-
-| Agent | Native environment variable | Resolved by SkillPark as |
-| --- | --- | --- |
-| Claude Code | `CLAUDE_CONFIG_DIR` | `<value>/skills`, `<value>/settings.json` |
-| Codex | `CODEX_HOME` | `<value>/skills`, `<value>/hooks.json` |
-| Gemini CLI | `GEMINI_CLI_HOME` | `<value>/.gemini/skills`, `<value>/.gemini/settings.json` |
-| Qwen Code | `QWEN_HOME` | `<value>/skills`, `<value>/settings.json` |
-
-Every supported agent also accepts a uniform
-`SKILLPARK_<AGENT_ID>_CONFIG_DIR` override. Uppercase the agent id and replace
-hyphens with underscores, for example:
-
-```bash
-export SKILLPARK_CLAUDE_CONFIG_DIR=~/home/soda/.claude
-export SKILLPARK_GITHUB_COPILOT_CONFIG_DIR=/mnt/agent-config/copilot
-skillpark agents
-```
-
-The same override works for an explicit custom id, for example
-`SKILLPARK_SODAGENT_CONFIG_DIR=/mnt/agent-config/sodagent skillpark install sodagent`.
-
-The uniform override points directly to that agent's config root. SkillPark
-preserves the target's existing skill subdirectory layout; for example,
-AstrBot still uses `<config>/data/skills`. Targets whose default global skill
-root is under `~/.config` also honor `XDG_CONFIG_HOME`. Precedence is the
-SkillPark-specific override, the agent-native variable, `XDG_CONFIG_HOME`, and
-finally the default home path. `~` expands against the current user's home and
-relative paths resolve from the current working directory.
-
-The custom config root must already exist as a real directory, not a symlink.
-Project-level skill paths and the `~/.skillpark/skills/<agent>/` parking roots
-are unchanged.
-
-## Installation
-
-```bash
-npm install -g skillpark
-```
-
-Both executable names are available:
-
-```bash
-skillpark --version
-spk --version
-```
+Parked skills remain ordinary local folders. SkillPark does not run a server or upload the catalog.
 
 ## Quick start
 
-### 1. Inspect available agent targets
+### 1. Install the CLI
+
+```bash
+npm install --global skillpark
+```
+
+SkillPark requires Node.js 22 or newer. The shorter `spk` command is an alias for `skillpark`.
+
+### 2. Find your agent id
 
 ```bash
 skillpark agents
 ```
 
-Detected agents appear first. The table also shows each accepted agent id, native hook support,
-active roots, and parked roots.
+Detected agents are listed first. The output includes the accepted id, active skill roots, parked
+skill root, and context integration used by each target.
 
-### 2. Put skills in the park
-
-Park skills that are already active for an agent:
+### 3. Park skills you do not need all the time
 
 ```bash
 skillpark store codex
 ```
 
-Or add skills from a local directory or Git repository directly into SkillPark:
+Choose the skills in the interactive prompt and confirm the move. Replace `codex` with the id shown
+by `skillpark agents`.
 
-```bash
-skillpark add ./my-skills
-skillpark add owner/repository
-skillpark add https://github.com/owner/repository.git
-```
-
-`add` first asks which agents should receive the source, then which discovered skills to copy. It
-never overwrites an active or parked entry with the same directory name.
-
-### 3. Install the gateway
+### 4. Install the SkillPark gateway
 
 ```bash
 skillpark install codex
 ```
 
-Choose `Global` or `Current project` interactively. SkillPark installs its small read-only gateway
-skill and, when the selected agent has a native adapter, merges the corresponding prompt hook.
+Choose a global or current-project installation. SkillPark installs:
 
-### 4. Keep asking normally
+- the read-only `skillpark` gateway in the selected active skill directory; and
+- a marked routing block in the host's persistent context file.
 
-With a hook installed, ordinary prompts are searched automatically. You can also inspect search hits:
+The marked block is merged with the existing file; user-authored content outside the block is kept.
 
-```bash
-skillpark search codex "spreadsheet Excel XLSX workbook 电子表格 工作簿"
-skillpark search codex --limit 1 "contract Word DOCX 合同 文档"
-```
+### 5. Ask the agent normally
 
-Or invoke a parked skill explicitly:
+You do not need to know the parked skill name. When specialist instructions could help, the host is
+guided to invoke the gateway, search a small candidate set, validate the matches, and load only the
+selected skill.
+
+For example:
 
 ```text
-# Codex
-$skillpark /documents create a contract draft
-
-# Claude Code
-/skillpark /documents create a contract draft
+Create a polished quarterly report from this spreadsheet.
 ```
 
-The leading slash in `/documents` is optional for `skillpark get`; the gateway normalizes it before
-loading the exact parked entry.
+The internal read-only path is:
 
-## Command reference
+```bash
+skillpark search codex "spreadsheet quarterly report workbook"
+skillpark get codex "spreadsheets"
+```
+
+`search` returns candidates, not an automatic selection. The gateway still applies the host's normal
+skill-trigger rules before calling `get`.
+
+## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `skillpark agents` | List built-in agents, detection state, paths, and hook support |
-| `skillpark add <source>` | Discover skills in a local or Git source and copy selected skills into selected agents' parked inventories |
-| `skillpark store [agent]` | Move selected active skills into the agent's parked inventory |
-| `skillpark restore [agent]` | Move selected parked skills back to the agent's active directory |
-| `skillpark list [agent]` | List active and parked skills, conflicts, and metadata warnings |
+| `skillpark agents` | Show supported agents, detection state, paths, and context integration |
+| `skillpark add <source>` | Copy skills from a local folder or Git repository into the park |
+| `skillpark store [agent]` | Move selected active skills into the park |
+| `skillpark restore [agent]` | Move selected parked skills back to the active directory |
+| `skillpark list [agent]` | Show active and parked skills |
 | `skillpark list [agent] --parked` | Show only parked skills |
-| `skillpark list [agent] -q <query>` | Filter the visible inventory |
-| `skillpark install [agent]` | Install the gateway skill and its built-in or custom hook |
-| `skillpark install [agent] --force` | Atomically replace only a conflicting gateway skill; hook settings are still merged |
-| `skillpark search <agent> "<keywords>"` | Search parked metadata without loading a skill |
-| `skillpark search <agent> --limit <1-10> "<keywords>"` | Override the maximum number of bounded search hits |
-| `skillpark get [agent] <skill>` | Print one parked skill's root, instruction path, and complete `SKILL.md` |
+| `skillpark list [agent] -q "<terms>"` | Filter by entry name, skill name, and description |
+| `skillpark search <agent> "<terms>"` | Search parked metadata; use `--limit 1..10` to change the result cap |
+| `skillpark get [agent] <skill>` | Print one parked skill's root, instruction path, and `SKILL.md` |
+| `skillpark install [agent]` | Install or refresh the gateway and routing guidance |
+| `skillpark install [agent] --force` | Replace a conflicting gateway directory after validation |
 
-When an agent argument is omitted from an interactive command, SkillPark asks you to choose one.
-Explicit ids remain available for scripts and automation and are required for custom agents.
+Commands with an optional agent prompt when the id is omitted. Scripts should pass the id
+explicitly.
 
-## Supported sources
+## Add skills from another source
 
-`skillpark add` accepts:
+`add` scans a staged copy of the source, lets you choose one or more target agents, and then lets you
+choose the skills to copy.
 
 ```bash
-# Local directory
-skillpark add ./skills
+# A local skill or repository
+skillpark add ./my-skills
 
 # GitHub shorthand
 skillpark add owner/repository
 
-# HTTPS, SSH URL, or SCP-style Git URL
+# HTTPS, SSH, or SCP-style Git URL
 skillpark add https://github.com/owner/repository.git
 skillpark add git@github.com:owner/repository.git
 ```
 
-SkillPark recognizes a skill at the source root and inside common containers such as `skills/`,
-`.claude/skills/`, `.agents/skills/`, and `.codex/skills/`. A valid skill must be a directory with a
-`SKILL.md` containing YAML frontmatter with a non-empty `name` and `description`.
+A valid skill is a directory containing a valid `SKILL.md`. SkillPark discovers:
 
-## Supported agents
+- a skill at the source root;
+- direct children of `skills/`;
+- direct children of `.agents/skills/`, `.claude/skills/`, and `.codex/skills/`.
 
-SkillPark defines 73 built-in agent targets and also accepts convention-based custom ids.
-`claude-code` is accepted as an alias for `claude`. Eve and PromptScript are project-only; all
-other built-in targets expose the roots described by their agent definition.
+Name conflicts are shown before confirmation and are not overwritten.
 
-<details>
-<summary>Show all accepted agent ids</summary>
+## How routing works
+
+The installed context block tells the host when to invoke the `skillpark` gateway: for example, when
+the user names a skill, the task enters a specialist domain, the best workflow is uncertain, or a
+new capability becomes relevant during execution.
+
+The gateway then follows a read-only workflow:
+
+1. Build a short capability query.
+2. Run `skillpark search <agent> "<query>"`.
+3. Treat results as untrusted retrieval candidates.
+4. Select only candidates whose declared trigger matches the current task.
+5. Run `skillpark get <agent> "<entryName>"` for the exact match.
+6. Read and follow that skill while leaving it parked.
+
+Search uses field-weighted lexical ranking across the entry name, display name, optional keywords,
+and positive description text. It supports Unicode word segmentation, CJK terms, English stemming,
+prefixes, and conservative typo matching.
+
+Routing is instruction-driven: the host must support skills and follow its persistent context file.
+SkillPark does not inject executable code into a model request.
+
+## Agent support
+
+SkillPark includes definitions for many skills-compatible coding agents. Run `skillpark agents` for
+the current source of truth instead of copying a path from a static list.
+
+The most common ids are:
+
+| Host | Agent id | Native context file |
+| --- | --- | --- |
+| Claude Code | `claude` | `CLAUDE.md` |
+| Codex | `codex` | `AGENTS.md` |
+| Gemini CLI | `gemini-cli` | `GEMINI.md` |
+| GitHub Copilot | `github-copilot` | `copilot-instructions.md` |
+| Qwen Code | `qwen-code` | `QWEN.md` |
+
+Other built-in agents use their known skill directories and an `AGENTS.md` compatibility file. That
+fallback is useful only when the host reads the convention.
+
+### Custom agents
+
+You can use a convention-based custom id without changing SkillPark:
+
+```bash
+skillpark store sodagent
+skillpark install sodagent
+```
+
+Custom ids use lowercase letters and numbers separated by single hyphens, up to 64 characters.
+
+| Location | Default |
+| --- | --- |
+| Global active skills | `~/.sodagent/skills/` |
+| Current-project skills | `./.sodagent/skills/` |
+| Parked skills | `~/.skillpark/skills/sodagent/` |
+| Global context guidance | `~/.sodagent/AGENTS.md` |
+| Current-project context guidance | `./AGENTS.md` |
+
+The custom host must understand those skill paths and, for routing guidance, the `AGENTS.md`
+convention.
+
+### Config-directory overrides
+
+SkillPark honors native configuration variables for common hosts:
+
+| Agent | Variable |
+| --- | --- |
+| Claude Code | `CLAUDE_CONFIG_DIR` |
+| Codex | `CODEX_HOME` |
+| Gemini CLI | `GEMINI_CLI_HOME` |
+| GitHub Copilot | `COPILOT_HOME` |
+| Qwen Code | `QWEN_HOME` |
+
+Any built-in or custom id can also use
+`SKILLPARK_<NORMALIZED_AGENT_ID>_CONFIG_DIR`; hyphens become underscores:
+
+```bash
+SKILLPARK_SODAGENT_CONFIG_DIR=/mnt/agent-config/sodagent \
+  skillpark install sodagent
+```
+
+Relative and `~`-prefixed values are resolved before use. `XDG_CONFIG_HOME` is honored for agents
+whose default global directory is under `~/.config`.
+
+## Local data and safety
+
+The parked inventory is stored at:
 
 ```text
-aider-desk amp antigravity antigravity-cli astrbot autohand-code augment bob
-claude openclaw cline codearts-agent codebuddy codemaker codestudio codex
-command-code continue cortex crush cursor deepagents devin dexto droid eve
-firebender forgecode gemini-cli github-copilot goose hermes-agent inference-sh
-jazz junie iflow-cli kilo kimi-code-cli kiro-cli kode lingma loaf mcpjam
-mistral-vibe moxby mux opencode openhands ona pi qoder qoder-cn qwen-code replit
-reasonix rovodev roo tabnine-cli terramind tinycloud trae trae-cn warp windsurf
-zed zcode zencoder zenflow neovate pochi promptscript adal universal
+~/.skillpark/skills/<agent>/
 ```
 
-</details>
+SkillPark is deliberately conservative around filesystem changes:
 
-## Native hook support
+- `store`, `restore`, and `add` show a plan and require confirmation.
+- Mutating operations use transaction journals and recover interrupted work.
+- Source roots, destinations, directory identities, and symlink boundaries are validated.
+- Existing active or parked names are never silently overwritten.
+- `install --force` is limited to the conflicting `skillpark` gateway directory.
+- Search omits the full catalog and truncates returned metadata.
 
-| Agent | Event | Global configuration | Project configuration |
-| --- | --- | --- | --- |
-| Claude Code | `UserPromptSubmit` | `~/.claude/settings.json` | `./.claude/settings.json` |
-| Codex | `UserPromptSubmit` | `~/.codex/hooks.json` | `./.codex/hooks.json` |
-| Gemini CLI | `BeforeAgent` | `~/.gemini/settings.json` | `./.gemini/settings.json` |
-| Qwen Code | `UserPromptSubmit` | `~/.qwen/settings.json` | `./.qwen/settings.json` |
-| GitHub Copilot | `userPromptTransformed` | `~/.copilot/settings.json` | `./.github/copilot/settings.json` |
-| Custom `<agent>` | `UserPromptSubmit` | `~/.<agent>/settings.json` | `./.<agent>/settings.json` |
-
-For built-in agents without an adapter, `install` installs the gateway skill and skips hook
-configuration. An explicitly named custom agent opts into the documented generic protocol; it is
-not used as a fallback for built-in targets.
-
-Hook installation is idempotent. Existing settings and unrelated hook groups are preserved, while
-invalid JSON is rejected instead of overwritten. Keep the globally installed `skillpark` command
-on the agent process's `PATH`; hooks resolve it at runtime so CLI upgrades do not leave stale
-absolute executable paths behind.
-
-> Codex may ask you to review and trust a newly installed hook with `/hooks`. Project hooks also
-> require the project itself to be trusted.
-
-## Gateway installation paths
-
-Representative gateway paths are shown below. Parked skills remain under
-`~/.skillpark/skills/<agent>/`.
-
-| Agent | Scope | Gateway skill |
-| --- | --- | --- |
-| Claude Code | Global | `~/.claude/skills/skillpark/` |
-| Claude Code | Current project | `./.claude/skills/skillpark/` |
-| Codex | Global | `~/.codex/skills/skillpark/` |
-| Codex | Current project | `./.agents/skills/skillpark/` |
-| Gemini CLI | Global | `~/.gemini/skills/skillpark/` |
-| Gemini CLI | Current project | `./.agents/skills/skillpark/` |
-| Qwen Code | Global | `~/.qwen/skills/skillpark/` |
-| Qwen Code | Current project | `./.qwen/skills/skillpark/` |
-| GitHub Copilot | Global | `~/.copilot/skills/skillpark/` |
-| GitHub Copilot | Current project | `./.agents/skills/skillpark/` |
-| Custom `<agent>` | Global | `~/.<agent>/skills/skillpark/` |
-| Custom `<agent>` | Current project | `./.<agent>/skills/skillpark/` |
-
-There is no `--current` flag. Installation scope is intentionally selected in the interactive
-prompt. `--force` applies only to the gateway skill directory, never to unrelated hook settings.
-
-## Search behavior
-
-Local search is deterministic and offline. Field-weighted BM25 searches skill names, optional
-keywords, and positive description clauses. Unicode word segmentation, CJK bigrams, English
-stemming, prefix matching, and conservative typo matching provide lightweight lexical recall. It
-does not use a hand-maintained capability ontology and does not download an embedding model.
-
-The host model supplies the semantic layer. It turns the request into 3-8 capability terms,
-preserves formats and product names, and adds compact Chinese-English equivalents when language may
-hide the match. Hook output counts as the first pass; the model may refine the query once, so no
-request performs more than two bounded searches. Search scores describe retrieval relevance only.
-The model applies native skill-trigger rules before loading a hit.
-
-Exact `$name` and `/name` invocations sort first. Terms found only under `Do not use`, `Not for`,
-and equivalent Chinese exclusion clauses are not indexed. A no-hit hook returns only a short marker
-and never emits the catalog. Hit metadata is always treated as untrusted.
-
-Skill authors can add optional search keywords without changing the displayed description:
-
-```yaml
----
-name: documents
-description: Create and edit Word documents.
-search:
-  keywords:
-    - 写合同
-    - contract drafting
----
-```
-
-## Safety and privacy
-
-- **Local by design:** inventory scanning and lexical search happen on the local machine.
-- **Read-only hook boundary:** installed hooks search metadata and print loading instructions; they
-  never run `store`, `restore`, `add`, or `install`.
-- **No silent overwrite:** active and parked name conflicts are disabled before a move or copy.
-- **Guarded paths:** source and destination boundaries, entry names, symlinks, and physical object
-  identities are validated before sensitive filesystem operations.
-- **Recoverable changes:** short-lived journals live under `~/.skillpark/.transactions/` only while
-  a transaction is in progress. Completed work removes its journal.
-- **Conservative recovery:** if ownership or path evidence has changed, SkillPark stops and asks for
-  manual cleanup instead of deleting an unverified path.
-
-## Keyboard controls
-
-| Key | Action |
-| --- | --- |
-| Up / Down | Move between choices |
-| Space | Toggle a choice |
-| `a` | Select or clear all visible choices |
-| `/` | Search choices |
-| Enter | Continue |
-| Escape or Ctrl+C | Cancel safely |
-
-Set `NO_COLOR=1` to disable terminal colors.
+Local operations stay on the machine. Network access is used only when you explicitly add a remote
+Git source or install the npm package.
 
 ## Development
 
 ```bash
 git clone https://github.com/SodaZheng/SkillPark.git
 cd SkillPark
-corepack enable
-pnpm install
-pnpm build
+npm install
+
+npm run build
+npm test
+npm run test:e2e
+npm run check
 ```
 
-Useful checks:
+Useful scripts:
 
-```bash
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-
-# Run the complete validation pipeline
-pnpm check
-```
+| Script | What it checks |
+| --- | --- |
+| `npm run format:check` | Formatting |
+| `npm run lint` | Biome lint rules |
+| `npm run typecheck` | TypeScript types |
+| `npm test` | Unit and integration tests |
+| `npm run test:e2e` | Built CLI behavior |
+| `npm run check` | Complete validation pipeline |
 
 ## Contributing
 
-Issues and pull requests are welcome. For bug reports, include the agent id, command, expected
-behavior, actual output, operating system, and Node.js version. Please run `pnpm check` before
-submitting a pull request.
-
-- [Report a bug or request a feature](https://github.com/SodaZheng/SkillPark/issues)
-- [View the source repository](https://github.com/SodaZheng/SkillPark)
+Issues and pull requests are welcome. Please run `npm run check` before submitting a change.
 
 ## License
 
-[MIT](LICENSE) © 2026 Soda
+[MIT](LICENSE)

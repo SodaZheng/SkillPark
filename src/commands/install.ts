@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { cp, lstat, mkdir, rename, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { copyFile, cp, lstat, mkdir, rename, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { Command } from "commander";
 import {
   getAgentSkillRoot,
@@ -8,11 +8,14 @@ import {
   supportsGlobalSkills,
 } from "../agents/registry.js";
 import type { AgentId } from "../domain/agents.js";
-import { getGatewayHookAdapter } from "../hooks/gateway.js";
 import {
-  preflightHookConfiguration,
-  writeHookConfiguration,
-} from "../hooks/config-file.js";
+  applyLegacyHookCleanup,
+  preflightLegacyHookCleanup,
+} from "../migrations/legacy-hooks.js";
+import {
+  preflightContextInstructions,
+  writeContextInstructions,
+} from "../instructions/context-file.js";
 import {
   GATEWAY_SKILL_ENTRY_NAME,
   bundledGatewaySkillRoot,
@@ -65,12 +68,20 @@ function samePath(first: string, second: string): boolean {
   return resolve(first) === resolve(second);
 }
 
-async function treesMatch(first: string, second: string): Promise<boolean> {
+async function treesMatch(
+  first: string,
+  second: string,
+  ignoredPaths: ReadonlySet<string> = new Set(),
+): Promise<boolean> {
   const [firstDigest, secondDigest] = await Promise.all([
     digestTree(first),
     digestTree(second),
   ]);
-  return JSON.stringify(firstDigest) === JSON.stringify(secondDigest);
+  const included = (entry: { path: string }) => !ignoredPaths.has(entry.path);
+  return (
+    JSON.stringify(firstDigest.filter(included)) ===
+    JSON.stringify(secondDigest.filter(included))
+  );
 }
 
 async function assertGatewaySource(source: string): Promise<void> {
@@ -164,6 +175,7 @@ function createInstallGuardedExecutor(
 }
 
 async function preflightSkillDestination(
+  agent: AgentId,
   source: string,
   locations: InstallLocations,
   force: boolean,
@@ -171,10 +183,24 @@ async function preflightSkillDestination(
   await assertSafeRootWithinBoundary(locations.boundary, locations.skillRoot);
   if (!(await pathExists(locations.skillDestination))) return "install";
   const info = await lstat(locations.skillDestination);
+  const metadataPath = join("agents", "openai.yaml");
   if (
     !info.isSymbolicLink() &&
     info.isDirectory() &&
     (await treesMatch(source, locations.skillDestination))
+  ) {
+    return "unchanged";
+  }
+  if (
+    !info.isSymbolicLink() &&
+    info.isDirectory() &&
+    (await treesMatch(
+      source,
+      locations.skillDestination,
+      new Set([metadataPath]),
+    )) &&
+    (agent !== "codex" ||
+      !(await pathExists(join(locations.skillDestination, metadataPath))))
   ) {
     return "unchanged";
   }
@@ -321,6 +347,27 @@ async function replaceSkill(
   }
 }
 
+async function synchronizeCodexMetadata(
+  agent: AgentId,
+  source: string,
+  locations: InstallLocations,
+  retainForSharedCodex: boolean,
+): Promise<void> {
+  const relativeMetadataPath = join("agents", "openai.yaml");
+  const destination = join(locations.skillDestination, relativeMetadataPath);
+  if (agent === "codex") {
+    await mkdir(join(locations.skillDestination, "agents"), {
+      recursive: true,
+    });
+    await copyFile(join(source, relativeMetadataPath), destination);
+    return;
+  }
+  if (retainForSharedCodex) return;
+  await rm(destination, {
+    force: true,
+  });
+}
+
 export async function runInstall(
   agentArgument: string,
   context: CommandContext,
@@ -328,7 +375,6 @@ export async function runInstall(
 ): Promise<void> {
   const agent = parseAgentId(agentArgument);
   const scope = options.scope ?? "global";
-  const hookAdapter = getGatewayHookAdapter(agent);
   const locations = installLocations(agent, context, scope);
   const force = options.force ?? false;
   const source = bundledGatewaySkillRoot();
@@ -337,11 +383,23 @@ export async function runInstall(
 
   await assertGatewaySource(source);
   const skillDisposition: SkillInstallDisposition =
-    await preflightSkillDestination(source, locations, force);
-  const hookPlan =
-    hookAdapter !== undefined
-      ? await preflightHookConfiguration(agent, hookAdapter, context, scope)
-      : undefined;
+    await preflightSkillDestination(agent, source, locations, force);
+  const legacyHookPlan = await preflightLegacyHookCleanup(
+    agent,
+    context,
+    scope,
+  );
+  const contextInstructionPlan = await preflightContextInstructions(
+    agent,
+    context,
+    scope,
+  );
+  const retainMetadataForSharedCodex =
+    agent !== "codex" &&
+    scope === "current" &&
+    (
+      await preflightContextInstructions("codex", context, "current")
+    )?.expected?.includes("<!-- skillpark-context:codex:start -->") === true;
 
   if (skillDisposition === "install") {
     context.output.info(`${locations.skillDestination} ← ${source}`);
@@ -355,6 +413,12 @@ export async function runInstall(
     } else {
       await installCurrentSkill(source, locations);
     }
+    await synchronizeCodexMetadata(
+      agent,
+      source,
+      locations,
+      retainMetadataForSharedCodex,
+    );
     context.output.success(
       `Installed SkillPark gateway skill for ${agent} (${scope}): ${locations.skillDestination}`,
     );
@@ -369,35 +433,59 @@ export async function runInstall(
       );
     }
     await replaceSkill(source, locations);
+    await synchronizeCodexMetadata(
+      agent,
+      source,
+      locations,
+      retainMetadataForSharedCodex,
+    );
     context.output.success(
       `Replaced SkillPark gateway skill for ${agent} (${scope}): ${locations.skillDestination}`,
     );
   } else {
+    await synchronizeCodexMetadata(
+      agent,
+      source,
+      locations,
+      retainMetadataForSharedCodex,
+    );
     context.output.info(
       `SkillPark gateway skill is already installed for ${agent} (${scope}): ${locations.skillDestination}`,
     );
   }
 
-  if (hookPlan !== undefined) {
-    if (hookPlan.changed) {
-      await writeHookConfiguration(
+  if (legacyHookPlan?.changed) {
+    await applyLegacyHookCleanup(legacyHookPlan);
+    if (legacyHookPlan.removedHandlers > 0) {
+      context.output.success(
+        `Removed ${legacyHookPlan.removedHandlers} legacy SkillPark hook ${legacyHookPlan.removedHandlers === 1 ? "handler" : "handlers"} for ${agent} (${scope}): ${legacyHookPlan.path}`,
+      );
+    } else {
+      context.output.success(
+        `Removed legacy SkillPark hook metadata for ${agent} (${scope}): ${legacyHookPlan.path}`,
+      );
+    }
+  }
+
+  if (contextInstructionPlan !== undefined) {
+    const guidanceLabel = contextInstructionPlan.compatibilityFallback
+      ? "AGENTS.md compatibility guidance"
+      : "context guidance";
+    if (contextInstructionPlan.changed) {
+      await writeContextInstructions(
         scope === "global"
-          ? context.agentConfigDirs[agent] === undefined
-            ? context.homeDir
-            : dirname(context.agentConfigDirs[agent])
+          ? (context.agentConfigDirs[agent] ?? context.homeDir)
           : context.cwd,
-        hookPlan,
+        contextInstructionPlan,
       );
       context.output.success(
-        `Installed SkillPark search hook for ${agent} (${scope}): ${hookPlan.path}`,
+        `Installed SkillPark ${guidanceLabel} for ${agent} (${scope}): ${contextInstructionPlan.path}`,
       );
     } else {
       context.output.info(
-        `SkillPark search hook is already installed for ${agent} (${scope}): ${hookPlan.path}`,
+        `SkillPark ${guidanceLabel} is current for ${agent} (${scope}): ${contextInstructionPlan.path}`,
       );
     }
-    const warning = hookAdapter?.warning?.(scope);
-    if (warning !== undefined) context.output.warning(warning);
   }
 }
 

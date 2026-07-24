@@ -36,8 +36,8 @@ function defineAgents(
   ) as unknown as Record<BuiltInAgentId, AgentDefinition>;
 }
 
-// Paths intentionally mirror skills@1.5.19. Keep host-specific behavior in
-// adapters; this catalog only describes identity, discovery, and skill roots.
+// Paths intentionally mirror skills@1.5.19. This catalog describes identity,
+// discovery, skill roots, and persistent context files.
 const definitions = defineAgents({
   "aider-desk": entry("AiderDesk", ".aider-desk/skills"),
   amp: entry("Amp", ".agents/skills", ".config/agents/skills", {
@@ -63,7 +63,10 @@ const definitions = defineAgents({
   claude: {
     ...entry("Claude Code", ".claude/skills"),
     aliases: ["claude-code"],
-    hook: "claude",
+    contextInstructions: {
+      global: "CLAUDE.md",
+      current: "CLAUDE.md",
+    },
     parkedKey: "claude",
   },
   openclaw: entry("OpenClaw", "skills", ".openclaw/skills", {
@@ -83,7 +86,10 @@ const definitions = defineAgents({
     ...entry("Codex", ".agents/skills", ".codex/skills", {
       global: [".codex"],
     }),
-    hook: "codex",
+    contextInstructions: {
+      global: "AGENTS.md",
+      current: "AGENTS.md",
+    },
   },
   "command-code": entry("Command Code", ".commandcode/skills"),
   continue: entry("Continue", ".continue/skills", undefined, {
@@ -113,11 +119,17 @@ const definitions = defineAgents({
   forgecode: entry("ForgeCode", ".forge/skills"),
   "gemini-cli": {
     ...entry("Gemini CLI", ".agents/skills", ".gemini/skills"),
-    hook: "gemini",
+    contextInstructions: {
+      global: "GEMINI.md",
+      current: "GEMINI.md",
+    },
   },
   "github-copilot": {
     ...entry("GitHub Copilot", ".agents/skills", ".copilot/skills"),
-    hook: "copilot",
+    contextInstructions: {
+      global: "copilot-instructions.md",
+      current: ".github/copilot-instructions.md",
+    },
   },
   goose: entry("Goose", ".goose/skills", ".config/goose/skills"),
   "hermes-agent": entry("Hermes Agent", ".hermes/skills"),
@@ -152,7 +164,10 @@ const definitions = defineAgents({
   "qoder-cn": entry("Qoder CN", ".qoder/skills", ".qoder-cn/skills"),
   "qwen-code": {
     ...entry("Qwen Code", ".qwen/skills"),
-    hook: "qwen",
+    contextInstructions: {
+      global: "QWEN.md",
+      current: "QWEN.md",
+    },
   },
   replit: entry("Replit", ".agents/skills", ".config/agents/skills", {
     current: [".replit"],
@@ -248,7 +263,6 @@ function customAgentDefinition(agent: AgentId): AgentDefinition {
     projectSkillsDir: `${configRoot}/skills`,
     globalSkillsDir: `${configRoot}/skills`,
     detection: { global: [configRoot], current: [configRoot] },
-    hook: "custom",
   };
 }
 
@@ -258,6 +272,7 @@ const nativeConfigEnvironments: Partial<
   claude: { name: "CLAUDE_CONFIG_DIR" },
   codex: { name: "CODEX_HOME" },
   "gemini-cli": { name: "GEMINI_CLI_HOME", suffix: ".gemini" },
+  "github-copilot": { name: "COPILOT_HOME" },
   "qwen-code": { name: "QWEN_HOME" },
 };
 

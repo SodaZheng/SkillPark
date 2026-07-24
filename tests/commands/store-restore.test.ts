@@ -1064,7 +1064,6 @@ describe("store and restore", () => {
       "install",
       "get",
       "search",
-      "hook",
     ]);
   });
 });

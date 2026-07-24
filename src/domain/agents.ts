@@ -77,13 +77,6 @@ export const AGENT_IDS = [
 export type BuiltInAgentId = (typeof AGENT_IDS)[number];
 export type AgentId = string;
 export type AgentScope = "global" | "current";
-export type HookAdapterId =
-  | "claude"
-  | "codex"
-  | "custom"
-  | "gemini"
-  | "copilot"
-  | "qwen";
 export type AgentConfigDirs = Partial<Record<AgentId, string>>;
 
 const AGENT_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
@@ -114,10 +107,13 @@ export interface AgentDefinition {
   aliases: readonly string[];
   projectSkillsDir: string;
   globalSkillsDir?: string;
+  contextInstructions?: {
+    global: string;
+    current: string;
+  };
   detection?: {
     global?: readonly string[];
     current?: readonly string[];
   };
-  hook?: HookAdapterId;
   parkedKey?: string;
 }

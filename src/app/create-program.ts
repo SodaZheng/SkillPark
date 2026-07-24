@@ -8,7 +8,6 @@ import {
 import { registerListCommand } from "../commands/list.js";
 import { registerInstallCommand } from "../commands/install.js";
 import { registerGetCommand } from "../commands/get.js";
-import { registerHookCommand } from "../commands/hook.js";
 import { registerRestoreCommand } from "../commands/restore.js";
 import { registerSearchCommand } from "../commands/search.js";
 import { registerStoreCommand } from "../commands/store.js";
@@ -41,6 +40,5 @@ Examples:
   registerInstallCommand(program, context);
   registerGetCommand(program, context);
   registerSearchCommand(program, context);
-  registerHookCommand(program, context);
   return program;
 }

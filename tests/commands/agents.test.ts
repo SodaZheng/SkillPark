@@ -48,13 +48,13 @@ describe("agents command", () => {
       .filter((line) => /^│ (?:Yes|No) /u.test(line));
     expect(rows).toHaveLength(73);
     expect(rows[0]).toMatch(
-      /│ Yes\s+│ Gemini CLI\s+│ gemini-cli\s+│ Skills \+ gemini hook/u,
+      /│ Yes\s+│ Gemini CLI\s+│ gemini-cli\s+│ Skills \+ native context/u,
     );
     expect(rows.find((row) => row.includes("│ Cursor"))).toMatch(
-      /│ cursor\s+│ Skills\s+│/u,
+      /│ cursor\s+│ Skills \+ AGENTS\.md\s+│/u,
     );
     expect(rows.find((row) => row.includes("│ Eve"))).toMatch(
-      /│ eve\s+│ Skills\s+│ global=unsupported/u,
+      /│ eve\s+│ Skills \+ AGENTS\.md\s+│ global=unsupported/u,
     );
   });
 });

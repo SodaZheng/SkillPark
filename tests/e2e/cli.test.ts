@@ -206,16 +206,14 @@ describe("built CLI", () => {
     expect(result.stderr).not.toContain("at runAdd");
   });
 
-  it("installs the bundled gateway skill and hook into the selected agent", async () => {
+  it("installs the bundled gateway skill and persistent context", async () => {
     const result = await runInteractive(["install", "codex"], "\r");
 
     expect(result).toMatchObject({ code: 0, stderr: "" });
     expect(result.stdout).toContain(
       "Installed SkillPark gateway skill for codex (global)",
     );
-    expect(result.stdout).toContain(
-      "Installed SkillPark search hook for codex (global)",
-    );
+    expect(result.stdout).not.toContain("search hook");
     await expect(
       readFile(
         join(result.home, ".codex", "skills", "skillpark", "SKILL.md"),
@@ -223,8 +221,13 @@ describe("built CLI", () => {
       ),
     ).resolves.toContain("/skillpark /pdf rotate report.pdf");
     await expect(
-      readFile(join(result.home, ".codex", "hooks.json"), "utf8"),
-    ).resolves.toContain("skillpark hook codex");
+      readFile(join(result.home, ".codex", "AGENTS.md"), "utf8"),
+    ).resolves.toContain(
+      "Use the installed skill named `skillpark` through the host's normal skill mechanism",
+    );
+    await expect(
+      access(join(result.home, ".codex", "hooks.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
 
     const gateway = join(result.home, ".codex", "skills", "skillpark");
     await writeFile(join(gateway, "stale.txt"), "replace me", "utf8");
@@ -240,11 +243,9 @@ describe("built CLI", () => {
     await expect(access(join(gateway, "stale.txt"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    const hookConfiguration = await readFile(
-      join(result.home, ".codex", "hooks.json"),
-      "utf8",
-    );
-    expect(hookConfiguration.match(/skillpark hook codex/g)).toHaveLength(1);
+    await expect(
+      access(join(result.home, ".codex", "hooks.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("installs SkillPark for a convention-based custom agent", async () => {
@@ -258,8 +259,11 @@ describe("built CLI", () => {
       ),
     ).resolves.toContain("SkillPark Read-Only Gateway");
     await expect(
-      readFile(join(result.home, ".sodagent", "settings.json"), "utf8"),
-    ).resolves.toContain("skillpark hook sodagent");
+      readFile(join(result.home, ".sodagent", "AGENTS.md"), "utf8"),
+    ).resolves.toContain("host's SkillPark agent id is `sodagent`");
+    await expect(
+      access(join(result.home, ".sodagent", "settings.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("selects an agent interactively when store omits it", async () => {
@@ -284,8 +288,11 @@ describe("built CLI", () => {
 
     expect(result).toMatchObject({ code: 0, stderr: "" });
     await expect(
-      readFile(join(project, ".claude", "settings.json"), "utf8"),
-    ).resolves.toContain("skillpark hook claude");
+      readFile(join(project, "CLAUDE.md"), "utf8"),
+    ).resolves.toContain("host's SkillPark agent id is `claude`");
+    await expect(
+      access(join(project, ".claude", "settings.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
     await expect(
       access(join(project, ".claude", "skills", "skillpark", "SKILL.md")),
     ).resolves.toBeUndefined();

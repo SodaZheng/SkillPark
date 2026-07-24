@@ -58,6 +58,7 @@ describe("agent registry", () => {
     const configDirs = resolveAgentConfigDirs(home, cwd, {
       CLAUDE_CONFIG_DIR: "~/profiles/claude",
       CODEX_HOME: "/state/codex",
+      COPILOT_HOME: "/state/copilot",
       GEMINI_CLI_HOME: "/state/gemini-home",
       QWEN_HOME: "../qwen-profile",
       SKILLPARK_CLAUDE_CONFIG_DIR: "/skillpark/claude",
@@ -68,6 +69,7 @@ describe("agent registry", () => {
       claude: "/skillpark/claude",
       codex: "/state/codex",
       "gemini-cli": join("/state/gemini-home", ".gemini"),
+      "github-copilot": "/state/copilot",
       "qwen-code": "/work/qwen-profile",
       sodagent: "/skillpark/sodagent",
     });

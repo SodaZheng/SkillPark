@@ -65,7 +65,7 @@ describe("search command", () => {
     expect(() => JSON.parse(result)).toThrow();
   });
 
-  it("shares search behavior with the hook service", async () => {
+  it("exposes the same bounded search behavior to programmatic callers", async () => {
     const home = await makeTempHome();
     const parked = join(home, ".skillpark", "skills", "claude");
     await createSkill(parked, "slides", {

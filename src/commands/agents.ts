@@ -6,7 +6,6 @@ import {
   getAgentSkillRoot,
   supportsGlobalSkills,
 } from "../agents/registry.js";
-import { getGatewayHookAdapter } from "../hooks/gateway.js";
 import { renderTable } from "../tui/table.js";
 import type { CommandContext } from "./context.js";
 
@@ -35,7 +34,7 @@ export async function runListAgents(context: CommandContext): Promise<void> {
       id: detection.id,
       label: definition.label,
       detected: detection.detected,
-      hook: getGatewayHookAdapter(detection.id)?.id,
+      nativeContext: definition.contextInstructions !== undefined,
       globalSkills: supportsGlobalSkills(detection.id)
         ? compactPath(
             getAgentSkillRoot(
@@ -84,7 +83,9 @@ export async function runListAgents(context: CommandContext): Promise<void> {
           agent.detected ? "Yes" : "No",
           agent.label,
           agent.id,
-          agent.hook === undefined ? "Skills" : `Skills + ${agent.hook} hook`,
+          agent.nativeContext
+            ? "Skills + native context"
+            : "Skills + AGENTS.md",
           [
             `global=${agent.globalSkills}`,
             `project=${agent.projectSkills}`,

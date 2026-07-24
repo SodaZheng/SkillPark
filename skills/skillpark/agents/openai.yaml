@@ -1,6 +1,6 @@
 interface:
   display_name: "SkillPark"
-  short_description: "Search a bounded parked-skill candidate set for every request"
-  default_prompt: "Use $skillpark to search parked skills with concise bilingual capability keywords and load only true trigger matches."
+  short_description: "Discover parked specialist skills when a task may need one"
+  default_prompt: "Use $skillpark when you are unsure how to proceed or suspect a specialist skill could handle the task better."
 policy:
   allow_implicit_invocation: true
